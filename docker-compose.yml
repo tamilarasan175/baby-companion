@@ -1,0 +1,12 @@
+services:
+  baby-companion:
+    build: .
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+    volumes:
+      - ./data:/app/data
+      - ./docs:/app/docs
+    environment:
+      - DATABASE_URL=sqlite:///./data/baby.db
+    restart: unless-stopped
