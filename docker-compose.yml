@@ -2,11 +2,26 @@ services:
   baby-companion:
     build: .
     ports:
-      - "8000:8000"
       - "8443:8443"
     volumes:
-      - ./data:/app/data
-      - ./docs:/app/docs
+      - ./data:/app/data            # your logs (SQLite) - stays on your machine
+      - ./docs:/app/docs            # health documents for the Ask tab
+      - whisper-cache:/root/.cache/huggingface   # speech model, downloaded once
     environment:
       - DATABASE_URL=sqlite:///./data/baby.db
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:8b}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-en}
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      - REGION=${REGION:-Alberta}
+      - HEALTH_LINE=${HEALTH_LINE:-Health Link 811}
+      - HEALTH_LINE_NUMBER=${HEALTH_LINE_NUMBER:-811}
+      - EMERGENCY_NUMBER=${EMERGENCY_NUMBER:-911}
+      - DEFAULT_TZ=${DEFAULT_TZ:-America/Edmonton}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
+
+volumes:
+  whisper-cache:

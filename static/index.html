@@ -6,15 +6,13 @@
     <title>Baby Companion</title>
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#111827">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/vendor/tailwindcss-3.4.17.js"></script>
     <script>tailwind.config = { darkMode: 'class' }</script>
     <style>
         body { -webkit-tap-highlight-color: transparent; padding-bottom: 70px; }
         button { min-height: 48px; transition: transform 0.1s, opacity 0.1s; }
         button:active { transform: scale(0.96); opacity: 0.8; }
-        .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #10b981; color: white; padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 50; animation: fade 2s forwards; }
-        @keyframes fade { 0% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
-        .toast { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); background: #16a34a; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; z-index: 50; }
+        .picked { outline: 2px solid #f472b6; background: #4b5563; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         .nav-btn.active { background: #4f46e5; }
@@ -23,7 +21,12 @@
 <body class="bg-gray-900 text-gray-100 min-h-screen">
     <div class="max-w-md mx-auto p-4">
         <h1 class="text-xl font-bold text-center">Baby Companion</h1>
-        <p class="text-center text-xs text-gray-400 mb-4">Open · Self-hosted · Private</p>
+        <p class="text-center text-xs text-gray-400 mb-2">Open · Self-hosted · Private</p>
+        <div class="flex items-center gap-2 mb-4 bg-gray-800 rounded-lg px-3 py-2">
+            <label for="tz-select" class="text-xs text-gray-400 whitespace-nowrap">Time zone</label>
+            <select id="tz-select" onchange="changeTimeZone(this.value)" class="flex-1 min-w-0 bg-gray-700 rounded-md p-1.5 text-xs"></select>
+            <span id="tz-clock" class="text-xs font-mono text-gray-300 whitespace-nowrap"></span>
+        </div>
 
         <!-- LOG TAB -->
         <div id="tab-log" class="tab-content active">
@@ -35,25 +38,48 @@
                 <button onclick="quickLog('diaper', {type: 'dirty'})" class="bg-green-600 rounded-xl p-4 font-semibold">Dirty</button>
                 <button onclick="startSleep()" class="bg-purple-600 rounded-xl p-4 font-semibold">Start Sleep</button>
                 <button onclick="endSleep()" class="bg-purple-800 rounded-xl p-4 font-semibold">End Sleep</button>
-                <button onclick="startWhisper()" class="bg-orange-600 rounded-xl p-4 font-semibold col-span-2">Voice Log</button>
+                <button id="voice-btn" onclick="toggleVoiceLog()" class="bg-orange-600 rounded-xl p-4 font-semibold col-span-2">Voice Log</button>
             </div>
+            <div id="voice-result" class="hidden mb-4 bg-gray-800 rounded-xl p-3 text-sm"></div>
             <div id="sleep-timer" class="hidden mb-4 bg-purple-900/40 rounded-xl p-4 text-center">
                 <p class="text-sm text-purple-300">Sleep timer</p>
                 <p id="sleep-elapsed" class="text-3xl font-mono font-bold">00:00</p>
                 <p class="text-xs text-gray-400">Started <span id="sleep-started"></span></p>
             </div>
             <div class="mb-4 bg-gray-800 rounded-xl p-4">
-                <h2 class="text-sm font-semibold mb-2">Feed Reminder</h2>
-                <div class="flex gap-2">
-                    <select id="reminder-hours" class="bg-gray-700 rounded-lg p-2 flex-1 text-sm">
-                        <option value="2">Every 2h</option>
-                        <option value="3" selected>Every 3h</option>
-                        <option value="4">Every 4h</option>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <h2 class="text-sm font-semibold">Next Feed</h2>
+                    <select id="reminder-hours" onchange="saveFeedInterval()" class="bg-gray-700 rounded-lg p-1.5 text-xs">
+                        <option value="2">every 2 h</option>
+                        <option value="2.5">every 2½ h</option>
+                        <option value="3" selected>every 3 h</option>
+                        <option value="3.5">every 3½ h</option>
+                        <option value="4">every 4 h</option>
                     </select>
-                    <button onclick="toggleReminder()" id="reminder-btn" class="bg-indigo-600 rounded-lg px-4 text-sm">Start</button>
                 </div>
-                <p id="reminder-status" class="text-xs text-gray-400 mt-2"></p>
-                <p id="reminder-countdown" class="text-2xl font-mono text-center mt-1 hidden">00:00:00</p>
+                <p id="next-feed-text" class="text-lg font-semibold">No feeds logged yet</p>
+                <p id="next-feed-sub" class="text-xs text-gray-400"></p>
+                <div id="alarm-ios">
+                    <button id="alarm-btn" onclick="setPhoneAlarm()" class="w-full mt-3 bg-indigo-600 rounded-lg p-3 text-sm font-semibold" disabled>Set iPhone alarm</button>
+                    <div class="flex justify-between gap-2 mt-2">
+                        <button onclick="document.getElementById('alarm-help').hidden ^= true" class="text-xs text-indigo-300 text-left" style="min-height:0">First time? 2-minute setup</button>
+                        <button onclick="setPhoneAlarm(2)" class="text-xs text-gray-400" style="min-height:0">Test: alarm in 2 min</button>
+                    </div>
+                    <div id="alarm-help" hidden class="mt-3 text-xs text-gray-300 bg-gray-900 rounded-lg p-3">
+                        <p class="font-semibold mb-1">One-time setup in the Shortcuts app</p>
+                        <ol class="list-decimal list-outside ml-4 space-y-1">
+                            <li>Open the <b>Shortcuts</b> app and tap <b>+</b> (top right).</li>
+                            <li>Tap the name at the top, choose <b>Rename</b>, and type exactly: <b>Baby Companion Alarm</b></li>
+                            <li>Tap <b>Search Actions</b>, type <b>Get Dates from Input</b>, and tap it.</li>
+                            <li>In that action, tap the blue word <b>Input</b> and choose <b>Shortcut Input</b>. (If a line saying "Receive input from Nowhere" appears at the top, that's fine.)</li>
+                            <li>Search for <b>Create Alarm</b> (a Clock action) and tap it.</li>
+                            <li>In Create Alarm, tap the time and pick the <b>Dates</b> variable from step 3. Optionally set the label to <b>Feed time</b>.</li>
+                            <li>Tap <b>Done</b>. Come back here and tap <b>Test: alarm in 2 min</b>. When iOS asks, tap <b>Always Allow</b>.</li>
+                        </ol>
+                        <p class="mt-2 text-gray-400">iPhone alarms ring even on silent and when the phone is locked. One-time alarms switch off after ringing; swipe old ones away in the Clock app now and then.</p>
+                    </div>
+                </div>
+                <p id="alarm-other" hidden class="text-xs text-gray-400 mt-2">The alarm button works on iPhone. On this device, set an alarm in your Clock app.</p>
             </div>
             <div id="milk-picker" class="hidden mb-4 bg-gray-800 rounded-xl p-4">
                 <div id="feed-timer" class="mb-3 text-center">
@@ -63,21 +89,21 @@
                 </div>
                 <p class="text-sm mb-2">Amount (ml)</p>
                 <div class="flex gap-2">
-                    <button onclick="setMl(30)" class="flex-1 bg-gray-700 rounded-lg py-2">30</button>
-                    <button onclick="setMl(60)" class="flex-1 bg-gray-700 rounded-lg py-2">60</button>
-                    <button onclick="setMl(90)" class="flex-1 bg-gray-700 rounded-lg py-2">90</button>
-                    <button onclick="setMl(120)" class="flex-1 bg-gray-700 rounded-lg py-2">120</button>
+                    <button onclick="setMl(30, this)" class="ml-btn flex-1 bg-gray-700 rounded-lg py-2">30</button>
+                    <button onclick="setMl(60, this)" class="ml-btn flex-1 bg-gray-700 rounded-lg py-2">60</button>
+                    <button onclick="setMl(90, this)" class="ml-btn flex-1 bg-gray-700 rounded-lg py-2">90</button>
+                    <button onclick="setMl(120, this)" class="ml-btn flex-1 bg-gray-700 rounded-lg py-2">120</button>
                 </div>
-                <input id="custom-ml" type="number" placeholder="Custom ml" class="w-full mt-2 bg-gray-700 rounded-lg p-2">
+                <input id="custom-ml" type="number" inputmode="numeric" oninput="pickButton('ml-btn', null)" placeholder="Custom ml" class="w-full mt-2 bg-gray-700 rounded-lg p-2">
                 <input id="formula-name" type="text" placeholder="Formula name (optional)" class="w-full mt-2 bg-gray-700 rounded-lg p-2 text-sm hidden">
-                <p class="text-sm mt-3 mb-1">Duration (min)</p>
+                <p class="text-sm mt-3 mb-1">Duration (min) <span class="text-xs text-gray-400">· optional, otherwise the timer is used</span></p>
                 <div class="flex gap-2">
-                    <button onclick="setDuration(5)" class="flex-1 bg-gray-700 rounded-lg py-2 text-sm">5</button>
-                    <button onclick="setDuration(10)" class="flex-1 bg-gray-700 rounded-lg py-2 text-sm">10</button>
-                    <button onclick="setDuration(15)" class="flex-1 bg-gray-700 rounded-lg py-2 text-sm">15</button>
-                    <button onclick="setDuration(20)" class="flex-1 bg-gray-700 rounded-lg py-2 text-sm">20</button>
+                    <button onclick="setDuration(5, this)" class="dur-btn flex-1 bg-gray-700 rounded-lg py-2 text-sm">5</button>
+                    <button onclick="setDuration(10, this)" class="dur-btn flex-1 bg-gray-700 rounded-lg py-2 text-sm">10</button>
+                    <button onclick="setDuration(15, this)" class="dur-btn flex-1 bg-gray-700 rounded-lg py-2 text-sm">15</button>
+                    <button onclick="setDuration(20, this)" class="dur-btn flex-1 bg-gray-700 rounded-lg py-2 text-sm">20</button>
                 </div>
-                <input id="custom-duration" type="number" placeholder="Custom min" class="w-full mt-2 bg-gray-700 rounded-lg p-2">
+                <input id="custom-duration" type="number" inputmode="numeric" oninput="pickButton('dur-btn', null)" placeholder="Custom min (or leave empty to use the timer)" class="w-full mt-2 bg-gray-700 rounded-lg p-2">
                 <button onclick="endFeed()" class="w-full mt-2 bg-pink-600 rounded-lg py-2">End Feed & Log</button>
                 <button onclick="cancelMilk()" class="w-full mt-1 text-sm text-gray-400">Cancel</button>
             </div>
@@ -98,7 +124,7 @@
         <!-- INSIGHTS TAB -->
         <div id="tab-insights" class="tab-content">
             <button onclick="loadHandoff()" class="w-full bg-emerald-700 hover:bg-emerald-800 rounded-xl p-3 mb-2 text-sm font-semibold">Shift Handoff</button>
-            <button onclick="loadVisitBrief()" class="w-full bg-indigo-700 hover:bg-indigo-800 rounded-xl p-3 mb-4 text-sm font-semibold">Generate 811 / Clinic Brief</button>
+            <button onclick="loadVisitBrief()" class="w-full bg-indigo-700 hover:bg-indigo-800 rounded-xl p-3 mb-4 text-sm font-semibold">Generate Health Line / Clinic Brief</button>
             <div class="flex gap-2 mb-4">
                 <button onclick="loadInsights()" class="flex-1 bg-yellow-700 rounded-xl p-3 text-sm">Insights</button>
                 <button onclick="loadSummary()" class="flex-1 bg-teal-700 rounded-xl p-3 text-sm">Today</button>
@@ -109,11 +135,74 @@
 
         <!-- ASK TAB -->
         <div id="tab-ask" class="tab-content">
-            <h2 class="text-lg font-semibold mb-2">Ask Documents</h2>
-            <div id="chat-messages" class="space-y-2 mb-3 text-sm max-h-64 overflow-y-auto"></div>
-            <div class="flex gap-2">
-                <input id="chat-input" type="text" placeholder="Ask about feeds, sleep..." class="flex-1 bg-gray-700 rounded-lg p-3 text-sm">
-                <button onclick="sendChat()" class="bg-indigo-600 rounded-lg px-4">Send</button>
+            <div class="flex items-baseline justify-between mb-1">
+                <h2 class="text-lg font-semibold">Ask Baby Companion</h2>
+                <button onclick="clearChat()" class="text-xs text-gray-400" style="min-height:0">Clear</button>
+            </div>
+            <p class="text-xs text-gray-400 mb-2">An AI agent that looks things up in your logs and documents. Watch each step as it works. Runs on your Mac; answers take 20–60 s.</p>
+            <div id="chat-examples" class="flex flex-wrap gap-2 mb-3">
+                <button onclick="askExample(this)" class="bg-gray-800 border border-gray-700 rounded-full px-3 text-xs" style="min-height:32px">How did baby eat today vs yesterday?</button>
+                <button onclick="askExample(this)" class="bg-gray-800 border border-gray-700 rounded-full px-3 text-xs" style="min-height:32px">Is weight gain on track?</button>
+                <button onclick="askExample(this)" class="bg-gray-800 border border-gray-700 rounded-full px-3 text-xs" style="min-height:32px">Enough wet diapers? What do the docs say?</button>
+                <button onclick="askExample(this)" class="bg-gray-800 border border-gray-700 rounded-full px-3 text-xs" style="min-height:32px">When was the last dirty diaper?</button>
+            </div>
+            <div id="chat-messages" class="space-y-3 mb-3 text-sm max-h-[60vh] overflow-y-auto"></div>
+            <form onsubmit="event.preventDefault(); sendChat()" class="flex gap-2">
+                <input id="chat-input" type="text" placeholder="Ask anything about your baby's logs..." class="flex-1 min-w-0 bg-gray-700 rounded-lg p-3 text-sm">
+                <button id="chat-send" type="submit" class="bg-indigo-600 rounded-lg px-4">Ask</button>
+            </form>
+        </div>
+
+        <!-- BABY TAB -->
+        <div id="tab-baby" class="tab-content">
+            <h2 id="baby-title" class="text-lg font-semibold">Baby</h2>
+            <p id="baby-age" class="text-sm text-indigo-300 mb-3"></p>
+
+            <form id="profile-form" onsubmit="event.preventDefault(); saveProfile()" class="bg-gray-800 rounded-xl p-4 mb-4 space-y-2 text-sm">
+                <h3 class="font-semibold">Birth details</h3>
+                <label class="block text-xs text-gray-400">Name<input name="name" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                <div class="grid grid-cols-2 gap-2">
+                    <label class="text-xs text-gray-400">Birth date<input name="birth_date" type="date" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                    <label class="text-xs text-gray-400">Birth time<input name="birth_time" type="time" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                    <label class="text-xs text-gray-400">Birth weight (g)<input name="birth_weight_g" type="number" inputmode="numeric" placeholder="e.g. 3400" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                    <label class="text-xs text-gray-400">Length (cm)<input name="birth_length_cm" type="number" step="0.1" inputmode="decimal" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                    <label class="text-xs text-gray-400">Head (cm)<input name="birth_head_cm" type="number" step="0.1" inputmode="decimal" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                </div>
+                <label class="block text-xs text-gray-400">Important notes<textarea name="notes" rows="3" placeholder="Allergies, blood type, hospital, anything to remember" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></textarea></label>
+                <button type="submit" class="w-full bg-indigo-600 rounded-lg p-2 font-semibold">Save details</button>
+                <p id="profile-status" class="text-xs text-gray-400"></p>
+            </form>
+
+            <div class="bg-gray-800 rounded-xl p-4 text-sm">
+                <h3 class="font-semibold mb-2">Vaccines &amp; injections</h3>
+                <div id="imm-list" class="space-y-2 mb-3"></div>
+                <details id="imm-add">
+                    <summary class="cursor-pointer text-indigo-300 font-semibold">+ Add a vaccine or injection</summary>
+                    <form onsubmit="event.preventDefault(); addImmunization(this)" class="mt-2 space-y-2">
+                        <label class="block text-xs text-gray-400">Name<input name="name" list="vaccine-names" required placeholder="Start typing, e.g. RSV" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                        <datalist id="vaccine-names">
+                            <option value="Vitamin K"></option>
+                            <option value="Erythromycin eye ointment"></option>
+                            <option value="Hepatitis B"></option>
+                            <option value="RSV (Beyfortus / nirsevimab)"></option>
+                            <option value="DTaP-IPV-Hib-HB"></option>
+                            <option value="Pneumococcal conjugate"></option>
+                            <option value="Rotavirus (oral)"></option>
+                            <option value="Meningococcal"></option>
+                            <option value="MMR-Var"></option>
+                            <option value="Influenza"></option>
+                        </datalist>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="text-xs text-gray-400">Date given<input name="date" type="date" required class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                            <label class="text-xs text-gray-400">Next dose due<input name="next_due" type="date" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                        </div>
+                        <label class="block text-xs text-gray-400">Where<input name="place" placeholder="e.g. hospital, community health centre" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                        <label class="block text-xs text-gray-400">Notes<input name="notes" placeholder="Dose, lot number, any reaction..." class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
+                        <button type="submit" class="w-full bg-indigo-600 rounded-lg p-2 font-semibold">Save</button>
+                        <p id="imm-status" class="text-xs text-red-400"></p>
+                    </form>
+                </details>
+                <p class="text-xs text-gray-500 mt-3">This is your own copy. The official record is kept by your public health authority.</p>
             </div>
         </div>
 
@@ -138,6 +227,7 @@
     <nav class="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 flex justify-around py-2">
         <button onclick="showTab('log', this)" class="nav-btn active flex-1 text-xs py-2">Log</button>
         <button onclick="showTab('activity', this)" class="nav-btn flex-1 text-xs py-2">Activity</button>
+        <button onclick="showTab('baby', this)" class="nav-btn flex-1 text-xs py-2">Baby</button>
         <button onclick="showTab('insights', this)" class="nav-btn flex-1 text-xs py-2">Insights</button>
         <button onclick="showTab('ask', this)" class="nav-btn flex-1 text-xs py-2">Ask</button>
         <button onclick="showTab('docs', this)" class="nav-btn flex-1 text-xs py-2">Docs</button>
@@ -150,60 +240,112 @@
             document.getElementById('tab-' + name).classList.add('active');
             if (el) el.classList.add('active');
             if (name === 'activity') loadEvents();
-        if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js");
             if (name === 'docs') loadDocs();
+            if (name === 'baby') loadBaby();
         }
 
-        let pendingSide = null;
-        let selectedDuration = 10;
         let sleepStart = null;
         let sleepInterval = null;
-        let reminderTimer = null;
-        let reminderActive = false;
 
-        function formatMST(iso) {
-            if (!iso) return '';
-            let s = iso;
-            if (!s.endsWith('Z') && !s.includes('+')) s = s.replace(' ', 'T') + 'Z';
-            return new Date(s).toLocaleString('en-CA', { timeZone: 'America/Edmonton', hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' });
+        // ---- Time zone -------------------------------------------------
+        // Chosen zone is remembered per device. "auto" follows the device's own zone.
+        const TZ_KEY = 'abc.timezone';
+        const DETECTED_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Edmonton';
+        const FALLBACK_ZONES = ['America/St_Johns', 'America/Halifax', 'America/Toronto', 'America/Winnipeg',
+            'America/Regina', 'America/Edmonton', 'America/Vancouver', 'America/New_York', 'America/Chicago',
+            'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Asia/Kolkata',
+            'Asia/Singapore', 'Australia/Sydney', 'UTC'];
+
+        function savedTzChoice() {
+            try { return localStorage.getItem(TZ_KEY) || 'auto'; } catch (e) { return 'auto'; }
+        }
+        function userTz() {
+            const choice = savedTzChoice();
+            return choice === 'auto' ? DETECTED_TZ : choice;
+        }
+        function tzOffset(zone) {
+            try {
+                const part = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' })
+                    .formatToParts(new Date()).find(p => p.type === 'timeZoneName');
+                return part ? part.value.replace('GMT', 'UTC') : '';
+            } catch (e) { return ''; }
+        }
+        function initTimeZonePicker() {
+            const select = document.getElementById('tz-select');
+            let zones = FALLBACK_ZONES;
+            try { if (Intl.supportedValuesOf) zones = Intl.supportedValuesOf('timeZone'); } catch (e) {}
+            if (!zones.includes(DETECTED_TZ)) zones = [DETECTED_TZ, ...zones];
+            const opt = (value, label) => `<option value="${esc(value)}">${esc(label)}</option>`;
+            select.innerHTML = opt('auto', `Auto: ${DETECTED_TZ.replace(/_/g, ' ')} (${tzOffset(DETECTED_TZ)})`) +
+                zones.map(z => opt(z, `${z.replace(/_/g, ' ')} (${tzOffset(z)})`)).join('');
+            const choice = savedTzChoice();
+            select.value = (choice === 'auto' || zones.includes(choice)) ? choice : 'auto';
+            updateTzClock();
+            setInterval(updateTzClock, 30000);
+        }
+        function updateTzClock() {
+            document.getElementById('tz-clock').textContent = fmtTime(new Date());
+        }
+        function changeTimeZone(value) {
+            try { localStorage.setItem(TZ_KEY, value); } catch (e) {}
+            updateTzClock();
+            // Re-render everything that shows a time.
+            if (feedStart) document.getElementById('feed-started').textContent = fmtTime(feedStart);
+            if (sleepStart) document.getElementById('sleep-started').textContent = fmtTime(sleepStart);
+            renderNextFeed();
+            loadEvents();
+            document.getElementById('insights-box').innerHTML = '';
+            document.getElementById('visit-brief').classList.add('hidden');
+            showToast('Time zone: ' + userTz().replace(/_/g, ' '));
+        }
+        // Server timestamps are UTC; ones without an offset must not be read as local time.
+        function parseServerTime(iso) {
+            if (!iso) return null;
+            let s = String(iso).replace(' ', 'T');
+            if (!/(Z|[+-]\d\d:?\d\d)$/.test(s)) s += 'Z';
+            const d = new Date(s);
+            return isNaN(d) ? null : d;
+        }
+        function fmtTime(date) {
+            return date.toLocaleTimeString('en-CA', { timeZone: userTz(), hour: '2-digit', minute: '2-digit' });
+        }
+        function fmtDateTime(iso) {
+            const d = parseServerTime(iso);
+            if (!d) return iso || '';
+            return d.toLocaleString('en-CA', { timeZone: userTz(), month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         }
 
         async function quickLog(type, data) {
-            await fetch('/events', {
+            const res = await fetch('/events', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ type, data, source: 'manual' })
             });
+            if (!res.ok) { showToast('Not saved: ' + await errorText(res)); return; }
             showToast('Logged');
             loadEvents();
-        if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js");
         }
 
-        function showToast(msg) {
-            const t = document.createElement('div');
-            t.className = 'toast';
-            t.textContent = msg;
-            document.body.appendChild(t);
-            setTimeout(() => t.remove(), 2000);
-        }
-
-        let pendingMilkType = null;
-        let selectedMl = 60;
-
+        // ---- Feed logging ------------------------------------------------
+        let selectedMl = null;        // from the 30/60/90/120 buttons
+        let selectedDuration = null;  // from the 5/10/15/20 buttons; null = use the timer
         let feedStart = null;
         let feedInterval = null;
         let feedType = null;
 
-        async function startFeed(type) {
-            feedType = type;
-            feedStart = new Date();
-            document.getElementById('feed-timer').classList.remove('hidden');
-            document.getElementById('feed-started').textContent = feedStart.toLocaleTimeString('en-CA', { timeZone: 'America/Edmonton', hour: '2-digit', minute: '2-digit' });
-            if (feedInterval) clearInterval(feedInterval);
-            feedInterval = setInterval(updateFeedTimer, 1000);
-            document.getElementById('milk-picker').classList.remove('hidden');
+        function pickButton(cls, btn) {
+            document.querySelectorAll('.' + cls).forEach(b => b.classList.toggle('picked', b === btn));
         }
-
+        function setMl(ml, btn) {
+            selectedMl = ml;
+            document.getElementById('custom-ml').value = '';
+            pickButton('ml-btn', btn);
+        }
+        function setDuration(m, btn) {
+            selectedDuration = m;
+            document.getElementById('custom-duration').value = '';
+            pickButton('dur-btn', btn);
+        }
         function updateFeedTimer() {
             if (!feedStart) return;
             const secs = Math.floor((Date.now() - feedStart.getTime()) / 1000);
@@ -211,36 +353,44 @@
             const s = (secs % 60).toString().padStart(2, '0');
             document.getElementById('feed-elapsed').textContent = `${m}:${s}`;
         }
-
+        function logMilk(type) {
+            feedType = type;
+            feedStart = new Date();
+            selectedMl = null;
+            selectedDuration = null;
+            for (const id of ['custom-ml', 'custom-duration', 'formula-name']) document.getElementById(id).value = '';
+            pickButton('ml-btn', null);
+            pickButton('dur-btn', null);
+            document.getElementById('feed-elapsed').textContent = '00:00';
+            document.getElementById('feed-started').textContent = fmtTime(feedStart);
+            document.getElementById('feed-timer').classList.remove('hidden');
+            document.getElementById('formula-name').classList.toggle('hidden', type !== 'formula');
+            document.getElementById('milk-picker').classList.remove('hidden');
+            if (feedInterval) clearInterval(feedInterval);
+            feedInterval = setInterval(updateFeedTimer, 1000);
+        }
         async function endFeed() {
             if (feedInterval) clearInterval(feedInterval);
             const elapsed = feedStart ? Math.floor((Date.now() - feedStart.getTime()) / 1000) : 0;
-            document.getElementById('feed-timer').classList.add('hidden');
-            const custom = document.getElementById('custom-ml').value;
-            const ml = custom ? parseInt(custom) : selectedMl;
-            const name = document.getElementById('formula-name').value.trim();
+            const customMl = parseInt(document.getElementById('custom-ml').value);
+            const customMin = parseFloat(document.getElementById('custom-duration').value);
+            const minutes = customMin > 0 ? customMin : selectedDuration;
             const data = {
                 type: feedType,
-                amount_ml: ml,
-                duration_sec: elapsed,
+                amount_ml: customMl > 0 ? customMl : (selectedMl || 0),
+                duration_sec: minutes ? Math.round(minutes * 60) : elapsed,
                 started: feedStart ? feedStart.toISOString() : null
             };
+            const name = document.getElementById('formula-name').value.trim();
             if (name && feedType === 'formula') data.formula_name = name;
             await quickLog('feed', data);
+            cancelMilk();
+        }
+        function cancelMilk() {
+            if (feedInterval) clearInterval(feedInterval);
             feedStart = null;
             feedType = null;
             document.getElementById('milk-picker').classList.add('hidden');
-        }
-
-        function logMilk(type) {
-            pendingMilkType = type;
-            feedType = type;
-            feedStart = new Date();
-            document.getElementById('milk-picker').classList.remove('hidden');
-            document.getElementById('formula-name').classList.toggle('hidden', type !== 'formula');
-            document.getElementById('feed-started').textContent = feedStart.toLocaleTimeString('en-CA', { timeZone: 'America/Edmonton', hour: '2-digit', minute: '2-digit' });
-            if (feedInterval) clearInterval(feedInterval);
-            feedInterval = setInterval(updateFeedTimer, 1000);
         }
 
         function logWeight() {
@@ -251,41 +401,11 @@
             if (g) await quickLog('weight', { grams: g });
             document.getElementById('weight-picker').classList.add('hidden');
         }
-        function setMl(ml) { selectedMl = ml; }
-        async function confirmMilk() {
-            const custom = document.getElementById('custom-ml').value;
-            const ml = custom ? parseInt(custom) : selectedMl;
-            const name = document.getElementById('formula-name').value.trim();
-            const data = { type: pendingMilkType, amount_ml: ml };
-            if (name && pendingMilkType === 'formula') data.formula_name = name;
-            await quickLog('feed', data);
-            cancelMilk();
-        }
-        function cancelMilk() {
-            document.getElementById('milk-picker').classList.add('hidden');
-            pendingMilkType = null;
-        }
-
-        function logFeed(side) {
-            pendingSide = side;
-            document.getElementById('duration-picker').classList.remove('hidden');
-        }
-        function setDuration(m) { selectedDuration = m; }
-        async function confirmFeed() {
-            const custom = document.getElementById('custom-duration').value;
-            const mins = custom ? parseInt(custom) : selectedDuration;
-            await quickLog('feed', { side: pendingSide, duration_min: mins });
-            cancelFeed();
-        }
-        function cancelFeed() {
-            document.getElementById('duration-picker').classList.add('hidden');
-            pendingSide = null;
-        }
 
         async function startSleep() {
             sleepStart = new Date();
             document.getElementById('sleep-timer').classList.remove('hidden');
-            document.getElementById('sleep-started').textContent = sleepStart.toLocaleTimeString('en-CA', { timeZone: 'America/Edmonton', hour: '2-digit', minute: '2-digit' });
+            document.getElementById('sleep-started').textContent = fmtTime(sleepStart);
             if (sleepInterval) clearInterval(sleepInterval);
             sleepInterval = setInterval(updateSleepTimer, 1000);
             await quickLog('sleep', { action: 'start' });
@@ -305,74 +425,178 @@
             await quickLog('sleep', { action: 'end', duration_sec: elapsed });
         }
 
-        let reminderEnd = null;
-        let countdownInterval = null;
-
-        function updateCountdown() {
-            if (!reminderEnd) return;
-            const left = Math.max(0, Math.floor((reminderEnd - Date.now()) / 1000));
-            const h = Math.floor(left / 3600).toString().padStart(2, '0');
-            const m = Math.floor((left % 3600) / 60).toString().padStart(2, '0');
-            const s = (left % 60).toString().padStart(2, '0');
-            document.getElementById('reminder-countdown').textContent = `${h}:${m}:${s}`;
-            if (left <= 0) {
-                clearInterval(countdownInterval);
+        // ---- Baby profile & immunizations -------------------------------
+        function todayInUserTz() {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: userTz() }).format(new Date());  // YYYY-MM-DD
+        }
+        function fmtDay(ymd) {
+            if (!ymd) return '';
+            const d = new Date(ymd + 'T12:00:00');
+            return isNaN(d) ? ymd : d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+        function showProfileHeader(profile, age) {
+            document.getElementById('baby-title').textContent = profile.name || 'Baby';
+            document.getElementById('baby-age').textContent = age ? age : 'Add birth details so the app knows the baby\'s age.';
+        }
+        async function loadBaby() {
+            try {
+                const [pr, list] = await Promise.all([
+                    fetch(`/api/profile?tz=${encodeURIComponent(userTz())}`).then(r => r.json()),
+                    fetch('/api/immunizations').then(r => r.json())
+                ]);
+                const form = document.getElementById('profile-form');
+                for (const el of form.elements) if (el.name) el.value = pr.profile[el.name] ?? '';
+                showProfileHeader(pr.profile, pr.age);
+                renderImmunizations(list);
+                const addForm = document.querySelector('#imm-add form');
+                if (!addForm.elements.date.value) addForm.elements.date.value = todayInUserTz();
+            } catch (e) {
+                document.getElementById('baby-age').textContent = 'Could not load: ' + e.message;
             }
         }
-
-        function toggleReminder() {
-            const btn = document.getElementById('reminder-btn');
-            const status = document.getElementById('reminder-status');
-            const cd = document.getElementById('reminder-countdown');
-            if (reminderActive) {
-                clearInterval(reminderTimer);
-                clearInterval(countdownInterval);
-                reminderActive = false;
-                reminderEnd = null;
-                btn.textContent = 'Start';
-                status.textContent = 'Stopped';
-                cd.classList.add('hidden');
+        async function saveProfile() {
+            const form = document.getElementById('profile-form');
+            const data = Object.fromEntries(new FormData(form).entries());
+            const status = document.getElementById('profile-status');
+            try {
+                const res = await fetch(`/api/profile?tz=${encodeURIComponent(userTz())}`, {
+                    method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+                });
+                if (!res.ok) throw new Error(await errorText(res));
+                const pr = await res.json();
+                showProfileHeader(pr.profile, pr.age);
+                status.textContent = 'Saved.';
+                showToast('Birth details saved');
+            } catch (e) {
+                status.textContent = 'Not saved: ' + e.message;
+            }
+        }
+        function renderImmunizations(list) {
+            const el = document.getElementById('imm-list');
+            if (!list.length) {
+                el.innerHTML = '<p class="text-xs text-gray-400">Nothing recorded yet. Add the ones from the hospital (e.g. Vitamin K, RSV) below.</p>';
                 return;
             }
-            Notification.requestPermission().then(() => {
-                const hours = parseInt(document.getElementById('reminder-hours').value) || 3;
-                reminderActive = true;
-                btn.textContent = 'Stop';
-                status.textContent = `Every ${hours}h`;
-                reminderEnd = Date.now() + hours * 3600 * 1000;
-                cd.classList.remove('hidden');
-                updateCountdown();
-                countdownInterval = setInterval(updateCountdown, 1000);
-                reminderTimer = setInterval(() => {
-                    new Notification('ABC', { body: `Feed check (${hours}h)` });
-                    try {
-                        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                        const osc = ctx.createOscillator();
-                        const gain = ctx.createGain();
-                        osc.connect(gain);
-                        gain.connect(ctx.destination);
-                        osc.frequency.value = 880;
-                        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-                        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-                        osc.start();
-                        osc.stop(ctx.currentTime + 0.4);
-                    } catch (e) {}
-                    const url = document.getElementById('reminder-webhook').value.trim();
-                    if (url) {
-                        fetch(url, {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({ message: `Time to feed (${hours}h check)`, type: 'feed_reminder' })
-                        }).catch(() => {});
-                    }
-                    // restart countdown
-                    reminderEnd = Date.now() + hours * 3600 * 1000;
-                }, hours * 3600 * 1000);
-            });
+            el.innerHTML = list.slice().reverse().map(i => `
+                <div class="bg-gray-900 rounded-lg p-2">
+                    <div class="flex justify-between gap-2">
+                        <span class="font-semibold">${esc(i.name)}</span>
+                        <span class="text-xs text-gray-400 whitespace-nowrap">${esc(fmtDay(i.date))}</span>
+                    </div>
+                    ${i.place ? `<p class="text-xs text-gray-400">${esc(i.place)}</p>` : ''}
+                    ${i.notes ? `<p class="text-xs text-gray-400">${esc(i.notes)}</p>` : ''}
+                    ${i.next_due ? `<p class="text-xs text-amber-300">Next dose due ${esc(fmtDay(i.next_due))}</p>` : ''}
+                    <button onclick="removeImmunization(this, ${i.id})" class="text-xs text-red-400 mt-1" style="min-height:0">Remove</button>
+                </div>`).join('');
+        }
+        async function addImmunization(form) {
+            const data = Object.fromEntries(new FormData(form).entries());
+            data.tz = userTz();
+            const status = document.getElementById('imm-status');
+            try {
+                const res = await fetch('/api/immunizations', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+                });
+                if (!res.ok) throw new Error(await errorText(res));
+                status.textContent = '';
+                form.reset();
+                form.elements.date.value = todayInUserTz();
+                document.getElementById('imm-add').open = false;
+                showToast('Saved: ' + data.name);
+                loadBaby();
+            } catch (e) {
+                status.textContent = e.message;
+            }
+        }
+        // Two taps to remove (the page can't show confirm dialogs everywhere).
+        async function removeImmunization(btn, id) {
+            if (btn.dataset.armed !== '1') {
+                btn.dataset.armed = '1';
+                btn.textContent = 'Tap again to remove';
+                setTimeout(() => { btn.dataset.armed = ''; btn.textContent = 'Remove'; }, 4000);
+                return;
+            }
+            await fetch(`/api/immunizations/${id}`, { method: 'DELETE' });
+            loadBaby();
         }
 
-        let mediaRecorder = null;
-        let audioChunks = [];
+        // ---- Next feed + iPhone alarm ----------------------------------
+        // A web page can't ring when the phone is locked, so this hands the time to an
+        // Apple Shortcut ("Baby Companion Alarm") that creates a real Clock alarm.
+        const INTERVAL_KEY = 'babycompanion.feedInterval';
+        const ALARM_SHORTCUT = 'Baby Companion Alarm';
+        const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        let lastFeedStart = null;
+        let nextFeedDue = null;
+
+        function feedIntervalHours() {
+            return parseFloat(document.getElementById('reminder-hours').value) || 3;
+        }
+        function saveFeedInterval() {
+            try { localStorage.setItem(INTERVAL_KEY, document.getElementById('reminder-hours').value); } catch (e) {}
+            renderNextFeed();
+        }
+        function initNextFeedCard() {
+            try {
+                const saved = localStorage.getItem(INTERVAL_KEY);
+                if (saved) document.getElementById('reminder-hours').value = saved;
+            } catch (e) {}
+            document.getElementById('alarm-ios').hidden = !IS_IOS;
+            document.getElementById('alarm-other').hidden = IS_IOS;
+            setInterval(renderNextFeed, 30000);
+        }
+        // Called by loadEvents with the newest events. Feed spacing is counted from when the feed started.
+        function updateNextFeed(events) {
+            const feed = (events || []).find(e => e.type === 'feed');
+            lastFeedStart = feed ? (parseServerTime(feed.data?.started) || parseServerTime(feed.timestamp)) : null;
+            renderNextFeed();
+        }
+        function fmtDuration(ms) {
+            const mins = Math.round(Math.abs(ms) / 60000);
+            const h = Math.floor(mins / 60), m = mins % 60;
+            return h ? `${h} h ${m} min` : `${m} min`;
+        }
+        function renderNextFeed() {
+            const text = document.getElementById('next-feed-text');
+            const sub = document.getElementById('next-feed-sub');
+            const btn = document.getElementById('alarm-btn');
+            if (!lastFeedStart) {
+                text.textContent = 'No feeds logged yet';
+                sub.textContent = 'Log a feed to see when the next one is due.';
+                btn.disabled = true;
+                btn.textContent = 'Set iPhone alarm';
+                nextFeedDue = null;
+                return;
+            }
+            nextFeedDue = new Date(lastFeedStart.getTime() + feedIntervalHours() * 3600000);
+            const left = nextFeedDue - Date.now();
+            sub.textContent = `Last feed started ${fmtTime(lastFeedStart)}`;
+            if (left > 60000) {
+                text.textContent = `Due ${fmtTime(nextFeedDue)} · in ${fmtDuration(left)}`;
+                text.className = 'text-lg font-semibold';
+                btn.disabled = false;
+                btn.textContent = `⏰ Set iPhone alarm for ${nextFeedDue.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+            } else {
+                text.textContent = `Feed due now${left < -60000 ? ` (${fmtDuration(left)} ago)` : ''}`;
+                text.className = 'text-lg font-semibold text-amber-300';
+                btn.disabled = true;
+                btn.textContent = 'Set iPhone alarm';
+            }
+        }
+        function setPhoneAlarm(minutesFromNow) {
+            const when = minutesFromNow ? new Date(Date.now() + minutesFromNow * 60000) : nextFeedDue;
+            if (!when) return;
+            // The phone's own clock time (alarms always use the phone's time zone).
+            const time = when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            let url = `shortcuts://x-callback-url/run-shortcut?name=${encodeURIComponent(ALARM_SHORTCUT)}` +
+                      `&input=text&text=${encodeURIComponent(time)}`;
+            // In Safari, come back to this page afterwards. (A home-screen app would reopen in Safari, so skip it there.)
+            const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+            if (!standalone) url += `&x-success=${encodeURIComponent(location.href.split('#')[0])}`;
+            showToast(`Setting alarm for ${time}...`);
+            location.href = url;
+        }
+
 
         function showToast(msg) {
             let t = document.getElementById('toast');
@@ -387,58 +611,109 @@
             setTimeout(() => t.style.display = 'none', 3000);
         }
 
-        async function startWhisper() {
-            showToast('Listening... speak now');
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const recorder = new MediaRecorder(stream);
-                const chunks = [];
-                recorder.ondataavailable = e => chunks.push(e.data);
-                recorder.onstop = async () => {
-                    showToast('Processing...');
-                    const blob = new Blob(chunks, { type: 'audio/webm' });
-                    const fd = new FormData();
-                    fd.append('file', blob, 'voice.webm');
-                    try {
-                        const res = await fetch('/api/voice', { method: 'POST', body: fd });
-                        const data = await res.json();
-                        if (data.transcript) {
-                            await fetch(`/api/voice-agent?transcript=${encodeURIComponent(data.transcript)}`, { method: 'POST' });
-                            showToast('Logged: ' + data.transcript.slice(0, 40));
-                            loadEvents();
-        if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js");
-                        } else {
-                            showToast('No speech detected');
-                        }
-                    } catch (err) {
-                        showToast('Voice error');
-                    }
-                    stream.getTracks().forEach(t => t.stop());
-                };
-                recorder.start();
-                setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 6000);
-            } catch (e) {
-                showToast('Mic blocked — use localhost');
-            }
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         }
 
-        function startVoice() {
-            const rec = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-            rec.onresult = e => {
-                const text = e.results[0][0].transcript.toLowerCase();
-                if (text.includes('left')) logFeed('left');
-                else if (text.includes('right')) logFeed('right');
-                else if (text.includes('wet')) quickLog('diaper', { type: 'wet' });
-                else if (text.includes('dirty')) quickLog('diaper', { type: 'dirty' });
-                else if (text.includes('sleep')) startSleep();
-                else quickLog('note', { text });
-            };
-            rec.start();
+        // Safari/iOS records audio/mp4, Chrome/Firefox record webm/ogg. Use whatever the browser supports.
+        function recorderOptions() {
+            if (window.MediaRecorder && MediaRecorder.isTypeSupported) {
+                for (const t of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']) {
+                    if (MediaRecorder.isTypeSupported(t)) return { mimeType: t };
+                }
+            }
+            return {};
         }
+        function audioExt(mime) {
+            return (mime || '').includes('mp4') ? 'm4a' : (mime || '').includes('ogg') ? 'ogg' : 'webm';
+        }
+        function micAvailable() {
+            if (!window.isSecureContext) {
+                showToast('Microphone needs HTTPS (or localhost)');
+                return false;
+            }
+            if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+                showToast('This browser cannot record audio');
+                return false;
+            }
+            return true;
+        }
+        async function errorText(res) {
+            try { const d = await res.json(); return d.detail || d.error || `Error ${res.status}`; }
+            catch (e) { return `Error ${res.status}`; }
+        }
+
+        let voiceRecorder = null;
+        let voiceStopTimer = null;
+
+        async function toggleVoiceLog() {
+            if (voiceRecorder && voiceRecorder.state === 'recording') {
+                voiceRecorder.stop();
+                return;
+            }
+            if (!micAvailable()) return;
+            const btn = document.getElementById('voice-btn');
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (e) {
+                showToast('Microphone permission denied');
+                return;
+            }
+            const recorder = new MediaRecorder(stream, recorderOptions());
+            const chunks = [];
+            recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+            recorder.onstop = async () => {
+                clearTimeout(voiceStopTimer);
+                stream.getTracks().forEach(t => t.stop());
+                voiceRecorder = null;
+                btn.textContent = 'Processing...';
+                btn.disabled = true;
+                const box = document.getElementById('voice-result');
+                try {
+                    const mime = recorder.mimeType || 'audio/webm';
+                    const fd = new FormData();
+                    fd.append('file', new Blob(chunks, { type: mime }), 'voice.' + audioExt(mime));
+                    const res = await fetch('/api/voice', { method: 'POST', body: fd });
+                    if (!res.ok) throw new Error(await errorText(res));
+                    const { transcript } = await res.json();
+                    if (!transcript) {
+                        showToast('No speech detected, try again');
+                        return;
+                    }
+                    const res2 = await fetch('/api/voice-agent', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ transcript })
+                    });
+                    if (!res2.ok) throw new Error(await errorText(res2));
+                    const result = await res2.json();
+                    box.classList.remove('hidden');
+                    box.innerHTML = `<p class="text-xs text-gray-400">Heard: “${esc(transcript)}”</p>
+                        <p class="mt-1 font-semibold text-green-400">Logged: ${esc(result.summary)}</p>
+                        ${result.mode === 'rules' ? '<p class="text-xs text-yellow-400 mt-1">AI model unavailable, used simple matching.</p>' : ''}`;
+                    showToast('Logged: ' + result.summary.slice(0, 50));
+                    loadEvents();
+                } catch (err) {
+                    showToast('Voice error: ' + err.message);
+                } finally {
+                    btn.textContent = 'Voice Log';
+                    btn.disabled = false;
+                    btn.classList.remove('animate-pulse');
+                }
+            };
+            voiceRecorder = recorder;
+            recorder.start();
+            btn.textContent = '● Recording, tap to stop';
+            btn.classList.add('animate-pulse');
+            voiceStopTimer = setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 30000);
+        }
+
 
         async function loadEvents() {
             const res = await fetch('/events?limit=30');
             const events = await res.json();
+            updateNextFeed(events);
             const el = document.getElementById('events');
             el.innerHTML = events.map(e => {
                 let detail = '';
@@ -451,8 +726,11 @@
                     detail = `${e.data.grams} g`;
                 }
                 if (e.type === 'diaper') detail = e.data.type || '';
-                if (e.type === 'sleep') detail = e.data.action || '';
-                return `<div class="bg-gray-800 rounded-lg p-3">${formatMST(e.timestamp)} — ${e.type} ${detail}</div>`;
+                if (e.type === 'sleep') detail = (e.data.action || '') + (e.data.duration_sec ? ` (${Math.round(e.data.duration_sec / 60)} min)` : '');
+                if (e.type === 'note') detail = e.data.text || '';
+                if (e.type === 'visit') detail = e.data.plan?.summary || 'clinic visit';
+                if (e.type === 'immunization') detail = e.data.name || '';
+                return `<div class="bg-gray-800 rounded-lg p-3">${fmtDateTime(e.timestamp)} — ${esc(e.type)} ${esc(detail)}</div>`;
             }).join('') || '<p class="text-gray-500">No events yet</p>';
         }
 
@@ -462,22 +740,12 @@
             document.getElementById('insights-box').innerHTML = `<p class="font-semibold">Shift Handoff</p><p class="mt-1">${data.briefing}</p>`;
         }
 
-        function fmt(iso) {
-            if (!iso) return '';
-            try {
-                const d = new Date(iso);
-                return d.toLocaleString('en-CA', { timeZone: 'America/Edmonton', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            } catch (e) {
-                return iso;
-            }
-        }
-
         async function loadVisitBrief() {
             const box = document.getElementById('visit-brief');
             box.classList.remove('hidden');
             box.innerHTML = '<p>Loading brief...</p>';
             try {
-                const res = await fetch('/api/visit-brief');
+                const res = await fetch(`/api/visit-brief?tz=${encodeURIComponent(userTz())}`);
                 if (!res.ok) {
                     box.innerHTML = `<p class="text-red-400">Error ${res.status}</p>`;
                     return;
@@ -485,7 +753,7 @@
                 const data = await res.json();
                 const t = data.totals || {};
                 box.innerHTML = `
-                    <strong>811 / Clinic Visit Brief</strong>
+                    <strong>Health Line / Clinic Visit Brief</strong>
                     <div class="mt-2 space-y-1 text-xs">
                         <p><b>Feeds</b> 24h: ${t.feeds?.['24h']||0} | 48h: ${t.feeds?.['48h']||0} | 72h: ${t.feeds?.['72h']||0}</p>
                         <p><b>Mom’s Milk</b> 24h: ${t.breast_ml?.['24h']||0} ml</p>
@@ -495,9 +763,9 @@
                         <p><b>Weight</b> latest: ${(data.details?.weights||[]).slice(-1)[0]?.data?.grams || 'n/a'} g</p>
                     </div>
                     ${(data.flags||[]).length ? '<p class="mt-2 font-semibold">Flags</p><ul class="list-disc list-inside">' + data.flags.map(f => `<li>${f}</li>`).join('') + '</ul>' : ''}
-                    <details class="mt-2"><summary class="cursor-pointer font-semibold">Feed details</summary><ul class="list-disc list-inside text-xs mt-1">${(data.details?.feeds||[]).map(f => `<li>${fmt(f.time)} · ${f.data.amount_ml||''} ml ${f.data.type||''}</li>`).join('')}</ul></details>
-                    <details class="mt-1"><summary class="cursor-pointer font-semibold">Diaper details</summary><ul class="list-disc list-inside text-xs mt-1">${(data.details?.diapers||[]).map(d => `<li>${fmt(d.time)} · ${d.data.type||''}</li>`).join('')}</ul></details>
-                    <button onclick="copyBrief()" class="mt-3 w-full bg-gray-700 rounded-lg py-2 text-xs">Copy for 811 Call</button>
+                    <details class="mt-2"><summary class="cursor-pointer font-semibold">Feed details</summary><ul class="list-disc list-inside text-xs mt-1">${(data.details?.feeds||[]).map(f => `<li>${fmtDateTime(f.time)} · ${f.data.amount_ml||''} ml ${f.data.type||''}</li>`).join('')}</ul></details>
+                    <details class="mt-1"><summary class="cursor-pointer font-semibold">Diaper details</summary><ul class="list-disc list-inside text-xs mt-1">${(data.details?.diapers||[]).map(d => `<li>${fmtDateTime(d.time)} · ${d.data.type||''}</li>`).join('')}</ul></details>
+                    <button onclick="copyBrief()" class="mt-3 w-full bg-gray-700 rounded-lg py-2 text-xs">Copy brief</button>
                 `;
                 window._briefText = data.copy_text || '';
             } catch (e) {
@@ -507,8 +775,8 @@
 
         function copyBrief() {
             if (window._briefText) {
-                navigator.clipboard.writeText(window._briefText);
-                alert('Copied to clipboard');
+                navigator.clipboard.writeText(window._briefText)
+                    .then(() => showToast('Copied'), () => showToast('Copy failed: select the text manually'));
             }
         }
 
@@ -521,26 +789,146 @@
                 : `<strong>Insights</strong><p class="mt-2">No flags. Feeds: ${data.feeds_24h}, Wet: ${data.wet_24h}</p><p class="text-xs">Weight: ${data.latest_weight || 'n/a'} g</p>`;
         }
         async function loadSummary() {
-            const res = await fetch('/summary/today');
+            const res = await fetch(`/summary/today?tz=${encodeURIComponent(userTz())}`);
             const data = await res.json();
             document.getElementById('insights-box').innerHTML = `<strong>Today</strong><p class="mt-2">${data.summary}</p>`;
         }
 
+        // ---- Ask agent ----------------------------------------------
+        // Conversation memory for follow-up questions ("and last week?"). Kept in the page only.
+        let chatHistory = [];
+        let agentBusy = false;
+
+        const TOOL_LABELS = {
+            summarize_period: 'Totals for a period', daily_breakdown: 'Day-by-day totals',
+            recent_events: 'Recent log entries', weight_history: 'Weight history',
+            search_documents: 'Search documents', clinic_visits: 'Clinic visit notes', calculate: 'Calculate'
+        };
+
+        function askExample(btn) {
+            document.getElementById('chat-input').value = btn.textContent;
+            sendChat();
+        }
+        function clearChat() {
+            if (agentBusy) return;
+            chatHistory = [];
+            document.getElementById('chat-messages').innerHTML = '';
+            document.getElementById('chat-examples').hidden = false;
+        }
+        function fmtArgs(args) {
+            const parts = Object.entries(args || {}).map(([k, v]) => `${k}: ${typeof v === 'string' ? '"' + v + '"' : v}`);
+            return parts.length ? parts.join(', ') : 'no inputs';
+        }
+
         async function sendChat() {
-            const q = document.getElementById('chat-input').value.trim();
-            if (!q) return;
+            const input = document.getElementById('chat-input');
+            const q = input.value.trim();
+            if (!q || agentBusy) return;
+            agentBusy = true;
+            input.value = '';
+            const sendBtn = document.getElementById('chat-send');
+            sendBtn.disabled = true;
+            document.getElementById('chat-examples').hidden = true;
+
             const chat = document.getElementById('chat-messages');
-            chat.innerHTML += `<div class="bg-indigo-800 rounded-lg p-2 text-right">${q}</div>`;
-            document.getElementById('chat-input').value = '';
-            const res = await fetch(`/api/logs/ask?q=${encodeURIComponent(q)}`);
-            const data = await res.json();
-            chat.innerHTML += `<div class="bg-gray-800 rounded-lg p-2"><strong>Logs</strong><br>${data.answer || 'No match'}</div>`;
-            // also try documents
-            const res2 = await fetch(`/rag/query?q=${encodeURIComponent(q)}`);
-            const data2 = await res2.json();
-            const points = (data2.points || []).map(p => `<li>${p}</li>`).join('');
-            chat.innerHTML += `<div class="bg-gray-800 rounded-lg p-2 mt-1"><strong>Docs</strong><br>${data2.answer || 'No document match'}<ul class="list-disc list-inside">${points}</ul></div>`;
+            chat.insertAdjacentHTML('beforeend', `<div class="bg-indigo-800 rounded-lg p-2 ml-8 text-right">${esc(q)}</div>`);
+            const turn = document.createElement('div');
+            turn.className = 'bg-gray-800 rounded-lg p-3 mr-4';
+            turn.innerHTML = `
+                <details class="agent-trace" open>
+                    <summary class="cursor-pointer text-xs text-gray-400 select-none">Agent steps</summary>
+                    <ol class="trace-list mt-2 space-y-1.5 text-xs border-l border-gray-600 pl-3"></ol>
+                    <p class="trace-status text-xs text-indigo-300 mt-2 animate-pulse">Starting...</p>
+                </details>
+                <div class="agent-answer whitespace-pre-line mt-2 hidden"></div>
+                <p class="agent-meta text-[11px] text-gray-500 mt-2 hidden"></p>`;
+            chat.appendChild(turn);
             chat.scrollTop = chat.scrollHeight;
+
+            const list = turn.querySelector('.trace-list');
+            const status = turn.querySelector('.trace-status');
+            const addStep = html => { list.insertAdjacentHTML('beforeend', `<li>${html}</li>`); chat.scrollTop = chat.scrollHeight; };
+            let answer = '';
+            const started = Date.now();
+            const tick = setInterval(() => {
+                if (!status.hidden) status.dataset.secs = Math.round((Date.now() - started) / 1000);
+                if (status.dataset.text) status.textContent = `${status.dataset.text} (${status.dataset.secs || 0}s)`;
+            }, 1000);
+
+            const handle = ev => {
+                if (ev.type === 'status') {
+                    status.dataset.text = `Step ${ev.step}: ${ev.text}`;
+                } else if (ev.type === 'thought') {
+                    addStep(`<span class="text-gray-300 italic">Thinking: ${esc(ev.text)}</span>`);
+                } else if (ev.type === 'tool_call') {
+                    addStep(`<span class="text-amber-300">→ ${esc(TOOL_LABELS[ev.name] || ev.name)}</span>
+                        <span class="text-gray-500 font-mono">${esc(ev.name)}(${esc(fmtArgs(ev.args))})</span>`);
+                } else if (ev.type === 'tool_result') {
+                    addStep(`<details><summary class="cursor-pointer text-green-300">← ${esc(ev.summary || 'done')}</summary>
+                        <pre class="mt-1 p-2 bg-gray-900 rounded text-[10px] text-gray-400 overflow-x-auto">${esc(JSON.stringify(ev.data, null, 2))}</pre></details>`);
+                } else if (ev.type === 'answer') {
+                    answer = ev.text;
+                    const box = turn.querySelector('.agent-answer');
+                    box.textContent = ev.text;
+                    box.classList.remove('hidden');
+                } else if (ev.type === 'safety') {
+                    turn.insertAdjacentHTML('afterbegin',
+                        `<div class="mb-2 p-2 rounded-lg bg-red-900/60 border border-red-500 text-red-100 text-xs font-semibold">${esc(ev.text)}</div>`);
+                } else if (ev.type === 'route') {
+                    addStep(`<span class="text-sky-300">Plan (decided by code): ${esc(ev.text)}</span>`);
+                } else if (ev.type === 'check') {
+                    addStep(ev.ok
+                        ? `<span class="text-emerald-400">✓ Check passed: ${esc(ev.text)}</span>`
+                        : `<details><summary class="cursor-pointer text-orange-300">✗ Check failed, sending it back: ${esc(ev.text)}</summary>
+                            <p class="mt-1 p-2 bg-gray-900 rounded text-[11px] text-gray-400">Rejected draft: ${esc(ev.draft)}</p></details>`);
+                } else if (ev.type === 'warning') {
+                    turn.querySelector('.agent-answer').insertAdjacentHTML('afterend',
+                        `<p class="text-xs text-yellow-400 mt-2">⚠ ${esc(ev.text)} Double-check this one.</p>`);
+                } else if (ev.type === 'error') {
+                    addStep(`<span class="text-red-400">${esc(ev.text)}</span>`);
+                } else if (ev.type === 'done') {
+                    const meta = turn.querySelector('.agent-meta');
+                    meta.textContent = `${ev.tools_used} tool call${ev.tools_used === 1 ? '' : 's'} · ${ev.steps} model step${ev.steps === 1 ? '' : 's'} · ${ev.seconds}s · runs locally`;
+                    meta.classList.remove('hidden');
+                }
+            };
+
+            try {
+                const res = await fetch('/api/agent/ask', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ question: q, history: chatHistory, tz: userTz() })
+                });
+                if (!res.ok || !res.body) throw new Error(await errorText(res));
+                // Read the Server-Sent Events stream: blocks of "data: {...}" separated by a blank line.
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    let idx;
+                    while ((idx = buffer.indexOf('\n\n')) >= 0) {
+                        const block = buffer.slice(0, idx);
+                        buffer = buffer.slice(idx + 2);
+                        const line = block.split('\n').find(l => l.startsWith('data: '));
+                        if (line) { try { handle(JSON.parse(line.slice(6))); } catch (e) {} }
+                    }
+                }
+            } catch (e) {
+                addStep(`<span class="text-red-400">${esc(e.message)}</span>`);
+            } finally {
+                clearInterval(tick);
+                status.hidden = true;
+                // Keep the steps visible but tucked away once the answer is in.
+                if (answer) turn.querySelector('.agent-trace').open = false;
+                if (answer) chatHistory.push({ role: 'user', content: q }, { role: 'assistant', content: answer });
+                chatHistory = chatHistory.slice(-6);
+                agentBusy = false;
+                sendBtn.disabled = false;
+                chat.scrollTop = chat.scrollHeight;
+            }
         }
 
         let clinicRecorder = null;
@@ -550,12 +938,14 @@
         let wakeLock = null;
 
         async function startClinic() {
+            if (!micAvailable()) return;
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                clinicRecorder = new MediaRecorder(stream);
+                clinicRecorder = new MediaRecorder(stream, recorderOptions());
                 clinicChunks = [];
-                clinicRecorder.ondataavailable = e => clinicChunks.push(e.data);
-                clinicRecorder.start();
+                clinicRecorder.ondataavailable = e => { if (e.data.size) clinicChunks.push(e.data); };
+                // Collect data every 10s so a long visit isn't held in one giant buffer.
+                clinicRecorder.start(10000);
                 clinicStartTime = Date.now();
                 document.getElementById('clinic-start').classList.add('hidden');
                 document.getElementById('clinic-stop').classList.remove('hidden');
@@ -568,70 +958,114 @@
                     try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
                 }
             } catch (e) {
-                alert('Microphone access needed. Use localhost or HTTPS.');
+                showToast('Microphone permission denied');
             }
         }
 
-        async function stopClinic() {
-            if (!clinicRecorder) return;
-            clinicRecorder.stop();
-            clinicRecorder.onstop = async () => {
+        function stopClinic() {
+            if (!clinicRecorder || clinicRecorder.state !== 'recording') return;
+            const recorder = clinicRecorder;
+            recorder.onstop = async () => {
+                recorder.stream.getTracks().forEach(t => t.stop());
                 if (clinicInterval) clearInterval(clinicInterval);
-                if (wakeLock) { try { await wakeLock.release(); } catch(e) {} }
+                if (wakeLock) { try { await wakeLock.release(); } catch(e) {} wakeLock = null; }
                 document.getElementById('clinic-stop').classList.add('hidden');
                 document.getElementById('clinic-start').classList.remove('hidden');
                 document.getElementById('clinic-timer').classList.add('hidden');
-                const blob = new Blob(clinicChunks, { type: 'audio/webm' });
-                const fd = new FormData();
-                fd.append('file', blob, 'visit.webm');
-                document.getElementById('scribe-result').textContent = 'Summarizing visit...';
-                const res = await fetch('/api/visits/scribe', { method: 'POST', body: fd });
-                const data = await res.json();
-                showScribeResult(data);
+                const mime = recorder.mimeType || 'audio/webm';
+                const blob = new Blob(clinicChunks, { type: mime });
+                clinicRecorder = null;
+                await submitScribe(blob, 'visit.' + audioExt(mime));
             };
+            recorder.stop();
         }
 
         async function scribeVisit() {
             const file = document.getElementById('clinicAudio').files[0];
-            if (!file) return;
-            const fd = new FormData();
-            fd.append('file', file);
-            document.getElementById('scribe-result').textContent = 'Transcribing...';
-            const res = await fetch('/api/visits/scribe', { method: 'POST', body: fd });
-            const data = await res.json();
-            showScribeResult(data);
+            if (!file) { showToast('Choose an audio file first'); return; }
+            await submitScribe(file, file.name);
+        }
+
+        // Upload, then poll: long visits take minutes to transcribe, longer than a proxy will hold a request open.
+        async function submitScribe(blob, filename) {
+            const out = document.getElementById('scribe-result');
+            out.textContent = 'Uploading recording...';
+            try {
+                const fd = new FormData();
+                fd.append('file', blob, filename);
+                const res = await fetch('/api/visits/scribe', { method: 'POST', body: fd });
+                if (!res.ok) throw new Error(await errorText(res));
+                const { job_id } = await res.json();
+                const started = Date.now();
+                while (true) {
+                    await new Promise(r => setTimeout(r, 2500));
+                    const r = await fetch(`/api/visits/scribe/${job_id}`);
+                    if (!r.ok) throw new Error(await errorText(r));
+                    const job = await r.json();
+                    const secs = Math.round((Date.now() - started) / 1000);
+                    if (job.status === 'transcribing') out.textContent = `Transcribing visit... (${secs}s)`;
+                    else if (job.status === 'summarizing') out.textContent = `Extracting care plan... (${secs}s)`;
+                    else if (job.status === 'error') throw new Error(job.error);
+                    else if (job.status === 'done') { showScribeResult(job); loadEvents(); return; }
+                }
+            } catch (e) {
+                out.innerHTML = `<p class="text-red-400">${esc(e.message)}</p>`;
+            }
         }
 
         function showScribeResult(data) {
             const p = data.plan || {};
-            const heard = (data.transcript || '').slice(0, 300) || '(no speech detected)';
+            const row = (label, v) => v ? `<p><b>${label}:</b> ${esc(v)}</p>` : '';
             document.getElementById('scribe-result').innerHTML = `
-                <p class="font-semibold mt-2">Extracted plan</p>
-                <p>Weight: ${p.weight_g || 'n/a'} g</p>
-                <p>Feeding: ${p.feeding_plan_updates || ''}</p>
-                <p>Meds: ${p.medications || ''}</p>
-                <p>Next: ${p.next_visit || ''}</p>
-                <p class="mt-2 text-xs text-gray-400">Heard: ${heard}</p>
-                ${p.weight_g ? `<button onclick="quickLog('weight', {grams: ${p.weight_g}})" class="mt-2 bg-amber-600 rounded px-3 py-1 text-xs">Save weight</button>` : ''}
+                <p class="font-semibold mt-2">Visit summary</p>
+                ${p.summary ? `<p class="mb-1">${esc(p.summary)}</p>` : ''}
+                ${row('Weight', p.weight_g ? p.weight_g + ' g' : '')}
+                ${row('Length', p.length_cm ? p.length_cm + ' cm' : '')}
+                ${row('Head', p.head_circumference_cm ? p.head_circumference_cm + ' cm' : '')}
+                ${row('Feeding', p.feeding_plan_updates)}
+                ${row('Meds', p.medications)}
+                ${p.red_flags ? `<p class="text-red-300"><b>Watch for:</b> ${esc(p.red_flags)}</p>` : ''}
+                ${row('Next visit', p.next_visit)}
+                ${data.plan_error ? `<p class="text-yellow-400 text-xs mt-1">${esc(data.plan_error)}</p>` : ''}
+                <p class="text-xs text-gray-500 mt-1">Saved to Activity.</p>
+                <details class="mt-2"><summary class="cursor-pointer text-xs text-gray-400">Full transcript</summary><p class="text-xs text-gray-400 mt-1">${esc(data.transcript)}</p></details>
+                ${p.weight_g ? `<button onclick="quickLog('weight', {grams: ${Number(p.weight_g)}})" class="mt-2 bg-amber-600 rounded px-3 py-1 text-xs">Save weight</button>` : ''}
             `;
         }
 
         async function uploadDocument() {
             const file = document.getElementById('fileInput').files[0];
-            if (!file) return;
-            const fd = new FormData();
-            fd.append('file', file);
-            const res = await fetch('/documents', { method: 'POST', body: fd });
-            const data = await res.json();
-            document.getElementById('upload-status').textContent = `Uploaded: ${data.title} (${data.chars} chars)`;
+            const status = document.getElementById('upload-status');
+            if (!file) { status.textContent = 'Choose a file first'; return; }
+            status.textContent = 'Uploading and indexing...';
+            try {
+                const fd = new FormData();
+                fd.append('file', file);
+                const res = await fetch('/documents', { method: 'POST', body: fd });
+                if (!res.ok) throw new Error(await errorText(res));
+                const data = await res.json();
+                status.textContent = data.warning
+                    ? `${data.title}: ${data.warning}`
+                    : `Indexed ${data.title} (${data.chunks} sections)`;
+            } catch (e) {
+                status.textContent = 'Upload failed: ' + e.message;
+            }
             loadDocs();
         }
         async function loadDocs() {
             const res = await fetch('/documents');
             const docs = await res.json();
-            document.getElementById('doc-list').textContent = 'Loaded: ' + docs.map(d => d.title).join(', ');
+            document.getElementById('doc-list').innerHTML = docs.length
+                ? docs.map(d => `<div class="flex justify-between items-center py-1"><span>${esc(d.title)} · ${d.chunks} sections</span><button onclick="deleteDoc(${d.id})" class="text-red-400 text-xs px-2" style="min-height:0">Remove</button></div>`).join('')
+                : 'No documents yet.';
+        }
+        async function deleteDoc(id) {
+            await fetch(`/documents/${id}`, { method: 'DELETE' });
+            loadDocs();
         }
 
+        initTimeZonePicker();
+        initNextFeedCard();
         loadEvents();
         if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js");
     </script>

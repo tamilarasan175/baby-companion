@@ -70,4 +70,4 @@ def logs_72h() -> str:
 @mcp.prompt()
 def prepare_pediatrician_questions() -> str:
     """Draft questions for a public health nurse or pediatrician visit."""
-    return "Look at the baby's recent logs and draft 5 clear questions for a Calgary public health nurse."
+    return "Look at the baby's recent logs and draft 5 clear questions for a public health nurse or pediatrician."
