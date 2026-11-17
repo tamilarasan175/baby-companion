@@ -1,0 +1,19 @@
+# Personal data: never commit
+data/
+*.db
+*.db-journal
+.env
+
+# Health documents are usually copyrighted: users download their own
+docs/*
+!docs/README.txt
+
+# Local tooling / OS / Python
+.claude/
+certs/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.DS_Store

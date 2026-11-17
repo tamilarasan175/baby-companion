@@ -1,0 +1,12 @@
+# Keep personal data and documents out of the image (they are mounted as volumes instead)
+data/
+docs/
+.env
+.git/
+.claude/
+certs/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.DS_Store
