@@ -174,15 +174,13 @@
             </form>
 
             <div class="bg-gray-800 rounded-xl p-4 text-sm">
-                <h3 class="font-semibold mb-2">Vaccines &amp; injections</h3>
+                <h3 class="font-semibold mb-2">Vaccines</h3>
                 <div id="imm-list" class="space-y-2 mb-3"></div>
                 <details id="imm-add">
-                    <summary class="cursor-pointer text-indigo-300 font-semibold">+ Add a vaccine or injection</summary>
+                    <summary class="cursor-pointer text-indigo-300 font-semibold">+ Add a vaccine</summary>
                     <form onsubmit="event.preventDefault(); addImmunization(this)" class="mt-2 space-y-2">
                         <label class="block text-xs text-gray-400">Name<input name="name" list="vaccine-names" required placeholder="Start typing, e.g. RSV" class="w-full mt-1 bg-gray-700 rounded-lg p-2 text-sm text-gray-100"></label>
                         <datalist id="vaccine-names">
-                            <option value="Vitamin K"></option>
-                            <option value="Erythromycin eye ointment"></option>
                             <option value="Hepatitis B"></option>
                             <option value="RSV (Beyfortus / nirsevimab)"></option>
                             <option value="DTaP-IPV-Hib-HB"></option>
@@ -474,7 +472,7 @@
         function renderImmunizations(list) {
             const el = document.getElementById('imm-list');
             if (!list.length) {
-                el.innerHTML = '<p class="text-xs text-gray-400">Nothing recorded yet. Add the ones from the hospital (e.g. Vitamin K, RSV) below.</p>';
+                el.innerHTML = '<p class="text-xs text-gray-400">No vaccines recorded yet. Add the first one below (for example the RSV shot from the hospital).</p>';
                 return;
             }
             el.innerHTML = list.slice().reverse().map(i => `

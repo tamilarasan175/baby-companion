@@ -95,7 +95,7 @@ TOOLS = [
             "count": {"type": "integer", "description": "How many recent visits (1-3). Default 1 = the latest visit."}}}}},
     {"type": "function", "function": {
         "name": "immunizations",
-        "description": "Vaccines and injections the baby has had (name, date, where, notes) and any recorded next due dates.",
+        "description": "Vaccines the baby has had (name, date, where, notes) and any recorded next due dates.",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "calculate",
@@ -495,7 +495,7 @@ def check_answer(question: str, answer: str, used_tools: set, evidence: str, tot
                 f"Make a real tool call instead. Tools: {', '.join(TOOL_FUNCS)}.")
     need = required_sources(question)
     if need["vaccines"] and "immunizations" not in used_tools:
-        return "This is about her vaccines or injections. Call immunizations first."
+        return "This is about her vaccines. Call immunizations first."
     if need["visits"] and "clinic_visits" not in used_tools:
         return "This is about what the doctor or clinic said. Call clinic_visits first."
     if need["docs"] and "search_documents" not in used_tools:

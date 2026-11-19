@@ -652,7 +652,7 @@ def get_immunizations(db: Session = Depends(get_db)):
 @app.post("/api/immunizations")
 def create_immunization(body: ImmunizationIn, db: Session = Depends(get_db)):
     if not body.name.strip():
-        raise HTTPException(status_code=400, detail="Enter the vaccine or injection name.")
+        raise HTTPException(status_code=400, detail="Enter the vaccine name.")
     try:
         e = baby.add_immunization(db, body.name, body.date, get_tz(body.tz), body.place, body.notes, body.next_due)
     except ValueError:

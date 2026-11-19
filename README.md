@@ -47,7 +47,7 @@ Most baby apps keep your child's data on their servers and put the "smart" featu
 
 **Baby profile and vaccines**
 - Birth date and time, birth weight, length, head size, and free-text notes (blood type, allergies, hospital…). The app shows the baby's age and the AI uses it.
-- **Vaccine & injection record:** name, date, where it was given, notes, next dose due.
+- **Vaccine record:** name, date, where it was given, notes, next dose due.
 
 **Next feed and iPhone alarm**
 - Shows when the next feed is due based on the last feed (every 2–4 h).

@@ -86,8 +86,6 @@ def seed(db):
                  "next_visit": "Two-month vaccines"}}, source="scribe")
 
     db.commit()
-    baby.add_immunization(db, "Vitamin K", born.isoformat(), TZ, place="City hospital")
-    baby.add_immunization(db, "Erythromycin eye ointment", born.isoformat(), TZ, place="City hospital")
     baby.add_immunization(db, "RSV (Beyfortus / nirsevimab)", (born + timedelta(days=1)).isoformat(), TZ,
                           place="City hospital", notes="Right thigh, no reaction")
 
