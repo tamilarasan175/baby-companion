@@ -31,6 +31,7 @@ Most baby apps keep your child's data on their servers and put the "smart" featu
 - One-tap logging: breast milk / formula feeds (with timer, amount, duration, formula brand), wet and dirty diapers, sleep start/end with timer, weight.
 - **Voice Log:** tap, say *"She had 3 ounces of Enfamil and a wet diaper"*, tap again. Two entries are logged. Works on iPhone and Android browsers.
 - **Activity** feed of everything logged, shown in your chosen time zone.
+- **Installs on your phone** like an app (PWA): add it to the iPhone or Android home screen. See [Using it on your phone](#using-it-on-your-phone-install-as-an-app).
 
 **Clinic visits**
 - **Record a visit** (or upload a voice memo). It is transcribed locally and turned into structured notes: summary, weight, length, feeding plan, medications, warning signs, next visit.
@@ -186,19 +187,54 @@ Your data in `data/` and documents in `docs/` are kept.
 
 ---
 
-## Using it on your phone
+## Using it on your phone (install as an app)
 
-**At home (same Wi-Fi):** find your computer's local IP address (Mac: System Settings → Wi-Fi → Details) and open `https://<that-ip>:8443` on the phone, then accept the certificate warning. Logging and the Ask tab work; some phones block the microphone on self-signed certificates.
+Baby Companion is a **PWA** (progressive web app): you open it in the phone's browser and add it to the home screen, and it then opens full-screen like a normal app. There's no App Store download.
 
-**Anywhere, with a working microphone:** use a Cloudflare quick tunnel (gives a real certificate):
+**How it works:** the app and the AI run on your computer, and the phone is the screen. So the phone must be able to reach your computer, and **your computer must be on and awake**. (A closed MacBook lid means sleep. Keep it open and plugged in, or use a keep-awake app such as Amphetamine.) Without a connection, the app opens but can't save logs or answer questions.
 
+### Step 1: Choose how your phone connects
+
+| Option | Works where | Microphone (voice, clinic) | Address stays the same (good for the home-screen icon) | Setup |
+|---|---|---|---|---|
+| **A. Home Wi-Fi** | At home only | Sometimes blocked (self-signed certificate) | Yes, while your computer's IP doesn't change | None |
+| **B. Tailscale** (recommended) | Anywhere, privately | Yes | Yes | ~10 minutes, free for personal use |
+| **C. Cloudflare quick tunnel** | Anywhere, public link | Yes | No, a new link each time | None, but set a password |
+
+**A. Home Wi-Fi.** Find your computer's local IP address (Mac: System Settings → Wi-Fi → Details → IP address), then on the phone open `https://<that-ip>:8443` and accept the certificate warning (iPhone: **Show Details → visit this website**).
+
+**B. Tailscale (private access from anywhere).** [Tailscale](https://tailscale.com) connects your devices into a private network; nobody else can reach the app.
+1. Install Tailscale on your computer and on your phone, and sign in to the same account on both.
+2. In the Tailscale admin console, under **DNS**, turn on **MagicDNS** and **HTTPS certificates**.
+3. On your computer, run:
+   ```bash
+   tailscale serve --bg https+insecure://localhost:8443
+   ```
+   It prints an address like `https://my-mac.tail1234.ts.net`. That address has a real certificate, so the microphone works, and it never changes.
+4. Open that address on the phone (with Tailscale switched on).
+
+Check the [Tailscale Serve docs](https://tailscale.com/kb/1312/serve) if the command differs in your version.
+
+**C. Cloudflare quick tunnel.** Good for a quick test. **Set `APP_PASSWORD` in `.env` first**: anyone with the link can open the app.
 ```bash
 cloudflared tunnel --url https://localhost:8443 --no-tls-verify
 ```
+Open the `https://….trycloudflare.com` link it prints, and press Ctrl+C to stop. The link changes every time, so a home-screen icon made from it stops working after a restart.
 
-Open the `https://….trycloudflare.com` link it prints. **Set `APP_PASSWORD` in `.env` before doing this**: without it, anyone with the link can see and change your data. Stop the tunnel with Ctrl+C when you're done. The link changes each time.
+### Step 2: Add it to your home screen
 
-Tip: in Safari use **Share → Add to Home Screen** to open it like an app.
+**iPhone (Safari):** open the app's address → tap the **Share** button (square with an arrow) → **Add to Home Screen** → **Add**. Open it from the new Baby Companion icon from now on.
+
+**Android (Chrome):** open the app's address → tap **⋮** (top right) → **Add to Home screen** or **Install app** → **Install**.
+
+If you set `APP_PASSWORD`, the app asks for it the first time you open it. Any username works.
+
+### At the clinic, away from home
+
+- **With option B or C:** use **Clinic Visit → Start Clinic Visit** as usual. Your computer at home does the transcribing.
+- **Without remote access:** record the appointment with the phone's voice recorder (iPhone: **Voice Memos**). When you're home, open the app → **Docs** tab → **Upload Voice Memo**. You get the same visit notes.
+
+Always ask your care provider before recording an appointment.
 
 ## iPhone feed alarm (one-time setup, about 2 minutes)
 
