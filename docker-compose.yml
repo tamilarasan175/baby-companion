@@ -23,5 +23,25 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  # Demo copy with made-up data (a fictional baby, "Ava") for screenshots and trying the app.
+  # Start:  docker compose --profile demo up -d demo    Open: https://localhost:8444
+  demo:
+    profiles: ["demo"]
+    build: .
+    ports:
+      - "8444:8443"
+    volumes:
+      - ./demo-data:/app/data       # separate database: your real data is never touched
+      - ./docs:/app/docs
+      - whisper-cache:/root/.cache/huggingface
+    environment:
+      - DATABASE_URL=sqlite:///./data/baby.db
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:8b}
+      - DEFAULT_TZ=${DEFAULT_TZ:-America/Edmonton}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: sh -c "python -m scripts.seed_demo && uvicorn app.main:app --host 0.0.0.0 --port 8443 --ssl-keyfile /app/certs/key.pem --ssl-certfile /app/certs/cert.pem"
+
 volumes:
   whisper-cache:

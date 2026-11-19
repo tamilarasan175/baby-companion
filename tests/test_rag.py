@@ -29,3 +29,9 @@ def test_reupload_replaces_instead_of_duplicating(db):
     rag.ingest(db, "guide.txt", GUIDE, "docs/guide.txt")
     from app.models import Document
     assert db.query(Document).filter(Document.title == "guide.txt").count() == 1
+
+
+def test_folder_ingest_skips_the_readme(db, tmp_path):
+    (tmp_path / "README.txt").write_text("Put health documents here.")
+    (tmp_path / "guide.txt").write_bytes(GUIDE)
+    assert rag.ingest_folder(db, str(tmp_path)) == ["guide.txt"]

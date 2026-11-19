@@ -92,8 +92,8 @@ def ingest_folder(db: Session, folder: str = "docs") -> list:
     known = {t for (t,) in db.query(Document.title).all()}
     added = []
     for name in sorted(os.listdir(folder)):
-        if name in known or not name.lower().endswith(SUPPORTED_EXTS):
-            continue
+        if name in known or not name.lower().endswith(SUPPORTED_EXTS) or name.lower().startswith("readme"):
+            continue  # README.txt is the folder's own instructions, not a health guide
         path = os.path.join(folder, name)
         try:
             with open(path, "rb") as f:

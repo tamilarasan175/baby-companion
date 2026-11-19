@@ -120,7 +120,7 @@ flowchart TD
 | Documents | PyMuPDF for PDF text extraction, BM25 ranking implemented in pure Python |
 | AI integration | [Model Context Protocol](https://modelcontextprotocol.io) server (`mcp` Python SDK) |
 | Packaging | Docker + Docker Compose |
-| Tests | pytest (30 tests: parsers, agent routing and checker, search, API, login) |
+| Tests | pytest (33 tests: parsers, agent routing and checker, search, API, login) |
 
 ## AI concepts used (and where to find them)
 

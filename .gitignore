@@ -1,5 +1,6 @@
 # Personal data: never commit
 data/
+demo-data/
 *.db
 *.db-journal
 .env

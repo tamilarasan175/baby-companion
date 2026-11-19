@@ -63,8 +63,24 @@ def test_calculate_is_safe():
 
 def test_totals_question_must_use_the_total():
     evidence = '{"what": "feed: formula, 75 ml"} {"total_ml": 440, "feeds": 7}'
-    totals = agent._numbers('{"total_ml": 440, "feeds": 7}')
+    totals = {"summarize_period": agent._numbers('{"total_ml": 440, "feeds": 7}')}
     used = {"recent_events", "summarize_period"}
-    q = "How much did baby drink today?"
+    q = "How much did baby drink this week?"
     assert "totals" in agent.check_answer(q, "Baby drank 75 ml today.", used, evidence, totals)
     assert agent.check_answer(q, "Baby drank 440 ml today.", used, evidence, totals) == ""
+
+
+def test_today_questions_use_calendar_days():
+    (tools, _), = agent.required_sources("How much did she drink today?")["logs"]
+    assert tools == {"daily_breakdown"}
+    # A 24-hour total from summarize_period isn't accepted for "today".
+    totals = {"summarize_period": {"485"}, "daily_breakdown": {"240"}}
+    used = {"summarize_period", "daily_breakdown"}
+    evidence = "485 240"
+    assert agent.check_answer("How much did she drink today?", "She drank 485 ml today.", used, evidence, totals)
+    assert agent.check_answer("How much did she drink today?", "She drank 240 ml today.", used, evidence, totals) == ""
+
+
+def test_dates_with_leading_zeros_match():
+    evidence = '{"given": [{"name": "RSV", "date": "2026-11-04"}]}'
+    assert agent.check_answer("Which vaccines has she had?", "RSV on November 4, 2026.", {"immunizations"}, evidence) == ""

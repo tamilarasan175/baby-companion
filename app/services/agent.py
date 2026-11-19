@@ -80,7 +80,7 @@ TOOLS = [
             "required": ["event_type"]}}},
     {"type": "function", "function": {
         "name": "weight_history",
-        "description": "All logged weights with dates, plus overall gain, average grams gained per day and per week.",
+        "description": "All logged weights with dates; overall gain since the first weight; gain per day since the lowest weight (the usual measure after the newborn weight loss); and gain per day over about the last week.",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "search_documents",
@@ -256,6 +256,20 @@ def weight_history(db, tz):
                              "to": f"{g1} g on {to_local(t1, tz).strftime('%b %d')}",
                              "total_gain_g": gain, "days": round(days, 1),
                              "avg_gain_per_day_g": round(gain / days), "avg_gain_per_week_g": round(gain / days * 7)}
+        # Babies usually lose weight after birth; guidance on daily gain applies from the lowest point.
+        tl, gl, _ = min(points, key=lambda p: p[1])
+        if tl < t1 and gl < g1:
+            d = max((t1 - tl).total_seconds() / 86400, 0.01)
+            result["since_lowest_weight"] = {"lowest": f"{gl} g on {to_local(tl, tz).strftime('%b %d')}",
+                                             "gain_g": g1 - gl, "days": round(d, 1),
+                                             "gain_per_day_g": round((g1 - gl) / d)}
+        week_ago = t1 - timedelta(days=7)
+        earlier = [p for p in points if p[0] <= week_ago]
+        if earlier:
+            tw, gw, _ = earlier[-1]
+            d = max((t1 - tw).total_seconds() / 86400, 0.01)
+            result["recent_gain"] = {"from": f"{gw} g on {to_local(tw, tz).strftime('%b %d')}",
+                                     "gain_g": g1 - gw, "days": round(d, 1), "gain_per_day_g": round((g1 - gw) / d)}
     return result
 
 
@@ -444,6 +458,8 @@ def _numbers(text: str) -> set:
         n = raw.replace(",", "").rstrip(".")
         if "." in n:
             n = n.rstrip("0").rstrip(".")
+        if n.isdigit():
+            n = str(int(n))  # "04" (as in 2026-11-04) and "4" are the same number
         out.add(n)
     return out
 
@@ -456,7 +472,11 @@ def required_sources(question: str) -> dict:
     if data or not advice:  # pure advice questions ("what should I do?") don't need the logs
         logs = [(needed, suggestion) for pattern, needed, suggestion in TOPICS if pattern.search(q)]
         if logs and TOTAL_Q.search(q):  # "how much today?" needs a total, not just the last entry
-            logs = [(TOTAL_TOOLS, "daily_breakdown (for today) or summarize_period (for a number of days)")]
+            if re.search(r"\btoday\b|\byesterday\b|so far", q):
+                # Calendar days, matching the Today card (summarize_period counts the last 24 hours instead).
+                logs = [({"daily_breakdown"}, "daily_breakdown with days=2 (gives today so far and yesterday)")]
+            else:
+                logs = [(TOTAL_TOOLS, "summarize_period, compare_periods or daily_breakdown")]
     vaccines = bool(VACCINE_Q.search(q))
     if vaccines and not data:  # "is the RSV shot safe?" is advice; "which shots has she had?" is a record lookup
         vaccines = not advice or bool(re.search(r"\b(has|had|got|get|given|did|when|which|next|due)\b", q))
@@ -466,7 +486,7 @@ def required_sources(question: str) -> dict:
 def check_answer(question: str, answer: str, used_tools: set, evidence: str, total_numbers: set = None) -> str:
     """Return a description of the problem, or '' if the answer passes.
 
-    total_numbers: numbers from totals tools (summarize_period, compare_periods, daily_breakdown).
+    total_numbers: {tool name: numbers in its results} for the totals tools.
     """
     embedded = _embedded_call(answer)
     if embedded:
@@ -482,14 +502,17 @@ def check_answer(question: str, answer: str, used_tools: set, evidence: str, tot
         return "This asks for guidance. Call search_documents first and answer from the documents."
     for needed, suggestion in need["logs"]:
         if not (used_tools & needed):
-            if needed == TOTAL_TOOLS and used_tools & LOG_TOOLS:
+            if needed <= TOTAL_TOOLS and used_tools & LOG_TOOLS:
                 return f"This question asks for a total, not single entries. Call {suggestion} first."
             return f"You have not looked at the baby's logs for this. Call {suggestion} first."
-    # "How much today?" must be answered with a number from a totals result, not e.g. the last feed's amount.
+    # "How much today?" must be answered with a number from the required totals tool,
+    # not e.g. the last feed's amount or a 24-hour figure.
     if total_numbers and TOTAL_Q.search(question.lower()) and need["logs"]:
+        needed_tools = need["logs"][0][0]
+        allowed = set().union(*(total_numbers.get(t, set()) for t in needed_tools))
         mentioned = {n for n in _numbers(answer) if not (n.isdigit() and int(n) <= 2)}
-        if mentioned and not (mentioned & total_numbers):
-            return ("Your answer does not use the totals from summarize_period or daily_breakdown. "
+        if allowed and mentioned and not (mentioned & allowed):
+            return (f"Your answer does not use the totals from {' or '.join(sorted(needed_tools))}. "
                     "Answer with the total from that result.")
     unsupported = sorted(n for n in _numbers(answer) - _numbers(evidence) - ALWAYS_OK_NUMBERS
                          if not (n.isdigit() and int(n) <= 2))
@@ -515,7 +538,7 @@ async def run(db: Session, question: str, history: list = None, tz_name: str = N
     # Numbers the answer may legitimately use: the question, the conversation, the clock, and tool results.
     evidence = [question, now, tz.key, messages[0]["content"]] + [str(t.get("content", "")) for t in (history or [])]
     used_tools, retries = set(), 0
-    total_numbers = set()
+    total_numbers = {}
     tools_used = 0
     if RED_FLAGS.search(question.lower()):
         yield {"type": "safety", "text": SAFETY_TEXT}
@@ -577,7 +600,7 @@ async def run(db: Session, question: str, history: list = None, tz_name: str = N
                 used_tools.add(name)
                 evidence.append(json.dumps(result, default=str))
                 if name in TOTAL_TOOLS:
-                    total_numbers |= _numbers(json.dumps(result, default=str))
+                    total_numbers.setdefault(name, set()).update(_numbers(json.dumps(result, default=str)))
             yield {"type": "tool_result", "name": name, "summary": short_summary(name, result), "data": result}
             messages.append({"role": "tool", "tool_name": name,
                              "content": json.dumps(result, default=str)[:MAX_RESULT_CHARS]})
