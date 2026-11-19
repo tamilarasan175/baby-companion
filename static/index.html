@@ -691,7 +691,9 @@
                     box.classList.remove('hidden');
                     box.innerHTML = `<p class="text-xs text-gray-400">Heard: “${esc(transcript)}”</p>
                         <p class="mt-1 font-semibold text-green-400">Logged: ${esc(result.summary)}</p>
-                        ${result.mode === 'rules' ? '<p class="text-xs text-yellow-400 mt-1">AI model unavailable, used simple matching.</p>' : ''}`;
+                        ${result.llm_error
+                            ? '<p class="text-xs text-yellow-400 mt-1">The AI model isn\'t responding (is Ollama running?), so this was matched by keywords.</p>'
+                            : result.mode === 'rules' ? '<p class="text-xs text-gray-400 mt-1">Matched by keywords.</p>' : ''}`;
                     showToast('Logged: ' + result.summary.slice(0, 50));
                     loadEvents();
                 } catch (err) {

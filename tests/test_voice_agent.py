@@ -45,6 +45,18 @@ def test_rule_based_fallback():
     assert ("log_sleep", {"action": "start"}) in actions
 
 
+def test_keywords_fill_in_an_event_the_model_missed(db, monkeypatch):
+    # The model returns only the dirty diaper for "wet and dirty"; the wet one must still be logged.
+    async def fake_chat(*args, **kwargs):
+        return {"tool_calls": [{"function": {"name": "log_diaper", "arguments": {"status": "dirty"}}}]}
+    monkeypatch.setattr(va.llm, "chat", fake_chat)
+    result = asyncio.run(va.run(db, "Diaper was wet and dirty"))
+    kinds = sorted(e.data["type"] for e in db.query(Event).filter(Event.type == "diaper"))
+    assert kinds == ["dirty", "wet"]
+    assert result["mode"] == "llm+rules"
+    assert result["llm_error"] is None
+
+
 def test_run_without_llm_uses_rules_and_never_loses_input(db):
     result = asyncio.run(va.run(db, "Baby had 2 oz of Similac and a wet diaper"))
     assert result["mode"] == "rules"

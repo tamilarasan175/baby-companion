@@ -199,22 +199,40 @@ async def run(db: Session, transcript: str) -> dict:
     except llm.LLMError as e:
         llm_error = str(e)
 
-    mode = "llm"
-    calls = raw_calls if raw_calls else rule_based_actions(t)
-    if not raw_calls:
-        mode = "rules"
-
     grounded, seen = [], set()
-    for name, args in calls:
+
+    def add(name, args):
         fixed = ground(name, dict(args), t)
         key = (name, json.dumps(fixed, sort_keys=True))
         if fixed is not None and key not in seen:
             seen.add(key)
             grounded.append((name, fixed))
-    # The LLM ran but everything it proposed was unsupported: try the rule parser before giving up.
-    if not grounded and raw_calls:
-        mode = "rules"
-        grounded = [(n, a) for n, a in ((n, ground(n, dict(a), t)) for n, a in rule_based_actions(t)) if a is not None]
+
+    for name, args in raw_calls:
+        add(name, args)
+    from_llm = len(grounded)
+
+    # The keyword parser also runs, to add events the model missed (e.g. the wet half of
+    # "wet and dirty"). It only adds kinds of event the model didn't already log.
+    def covered(name, args):
+        for n, a in grounded:
+            if n != name:
+                continue
+            if name == "log_diaper" and a.get("status") != args.get("status"):
+                continue
+            return True
+        return False
+
+    for name, args in rule_based_actions(t):
+        if not covered(name, args):
+            add(name, args)
+
+    if from_llm and len(grounded) > from_llm:
+        mode = "llm+rules"   # model did most of it; keywords filled a gap
+    elif from_llm:
+        mode = "llm"
+    else:
+        mode = "rules"       # model unreachable, or nothing it proposed matched what was said
 
     results = [r for r in (_dispatch(db, name, args, transcript) for name, args in grounded) if r]
     if not results:
