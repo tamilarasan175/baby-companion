@@ -195,15 +195,20 @@ Baby Companion is a **PWA** (progressive web app): you open it in the phone's br
 
 ### Step 1: Choose how your phone connects
 
-| Option | Works where | Microphone (voice, clinic) | Address stays the same (good for the home-screen icon) | Setup |
+Your data is stored and the AI runs only on your computer, whichever option you pick. The options differ in whether the connection from your phone passes through someone else's servers.
+
+| Option | Cloud involved? | Works where | Microphone (voice, clinic) | Address stays the same (for the home-screen icon) |
 |---|---|---|---|---|
-| **A. Home Wi-Fi** | At home only | Sometimes blocked (self-signed certificate) | Yes, while your computer's IP doesn't change | None |
-| **B. Tailscale** (recommended) | Anywhere, privately | Yes | Yes | ~10 minutes, free for personal use |
-| **C. Cloudflare quick tunnel** | Anywhere, public link | Yes | No, a new link each time | None, but set a password |
+| **A. Home Wi-Fi** | **None** | At home | Sometimes blocked (self-signed certificate) | Yes, while your computer's IP doesn't change |
+| **B. Your own VPN** | **None** | Anywhere | Same as home Wi-Fi | Yes |
+| **C. Tailscale** | Coordination only; it **can't read** your data | Anywhere | Yes | Yes |
+| **D. Cloudflare tunnel** | **Yes: Cloudflare can see the traffic** | Anywhere | Yes | No, a new link each time |
 
-**A. Home Wi-Fi.** Find your computer's local IP address (Mac: System Settings → Wi-Fi → Details → IP address), then on the phone open `https://<that-ip>:8443` and accept the certificate warning (iPhone: **Show Details → visit this website**).
+**A. Home Wi-Fi (cloud-free).** Find your computer's local IP address (Mac: System Settings → Wi-Fi → Details → IP address), then on the phone open `https://<that-ip>:8443` and accept the certificate warning (iPhone: **Show Details → visit this website**).
 
-**B. Tailscale (private access from anywhere).** [Tailscale](https://tailscale.com) connects your devices into a private network; nobody else can reach the app.
+**B. Your own VPN (cloud-free, more technical).** Many home routers have a built-in WireGuard or OpenVPN server. Connect your phone to your home network through it, then use the home Wi-Fi address from option A. Self-hosting [Headscale](https://github.com/juanfont/headscale) is another option for people who want Tailscale-style convenience without Tailscale's servers.
+
+**C. Tailscale (easiest private access from anywhere).** [Tailscale](https://tailscale.com) links your devices into a private network. Traffic between your phone and computer is end-to-end encrypted; Tailscale's servers help the devices find each other and can relay encrypted traffic, but can't read it. It needs a free Tailscale account.
 1. Install Tailscale on your computer and on your phone, and sign in to the same account on both.
 2. In the Tailscale admin console, under **DNS**, turn on **MagicDNS** and **HTTPS certificates**.
 3. On your computer, run:
@@ -215,7 +220,7 @@ Baby Companion is a **PWA** (progressive web app): you open it in the phone's br
 
 Check the [Tailscale Serve docs](https://tailscale.com/kb/1312/serve) if the command differs in your version.
 
-**C. Cloudflare quick tunnel.** Good for a quick test. **Set `APP_PASSWORD` in `.env` first**: anyone with the link can open the app.
+**D. Cloudflare quick tunnel (testing only).** Cloudflare decrypts the traffic on its servers before forwarding it to your computer, so your logs, questions and recordings pass through Cloudflare in readable form while the tunnel runs. Use it only to try things out, not for everyday use. **Set `APP_PASSWORD` in `.env` first**: anyone with the link can open the app.
 ```bash
 cloudflared tunnel --url https://localhost:8443 --no-tls-verify
 ```
@@ -231,8 +236,8 @@ If you set `APP_PASSWORD`, the app asks for it the first time you open it. Any u
 
 ### At the clinic, away from home
 
-- **With option B or C:** use **Clinic Visit → Start Clinic Visit** as usual. Your computer at home does the transcribing.
-- **Without remote access:** record the appointment with the phone's voice recorder (iPhone: **Voice Memos**). When you're home, open the app → **Docs** tab → **Upload Voice Memo**. You get the same visit notes.
+- **Cloud-free:** record the appointment with the phone's voice recorder (iPhone: **Voice Memos**). When you're home, open the app → **Docs** tab → **Upload Voice Memo**. You get the same visit notes. (If iCloud sync is on for Voice Memos, the recording is also copied to iCloud. Turn it off in Settings → your name → iCloud if you want it to stay on the phone.)
+- **With remote access (option B, C or D):** use **Clinic Visit → Start Clinic Visit** as usual. Your computer at home does the transcribing.
 
 Always ask your care provider before recording an appointment.
 
@@ -270,6 +275,7 @@ Set these in `.env` (see [`env.example`](env.example)):
 
 - **Your data stays local.** Logs, profile, vaccines and visit transcripts are in `data/baby.db`; documents in `docs/`. Both are excluded from git and from the Docker image. **Back up** by copying `data/baby.db`.
 - **What goes online:** only the one-time downloads (Docker image packages, the Ollama model, the Whisper speech model). No analytics or telemetry.
+- **Remote access is optional and your choice.** At home over Wi-Fi nothing touches the cloud. Tailscale can't read your traffic; a Cloudflare tunnel can. See [Using it on your phone](#using-it-on-your-phone-install-as-an-app).
 - **Login is off by default** because the app is meant for your home network. If you open it from the internet (tunnel, port forwarding), set `APP_PASSWORD`. It protects the web app, the API and the MCP endpoint. It is a single shared password, not per-person accounts.
 - **HTTPS** uses a self-signed certificate generated when the image is built.
 - Found a security problem? Please open a GitHub issue without sensitive details and ask for a private contact.
