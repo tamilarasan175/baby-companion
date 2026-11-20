@@ -33,7 +33,7 @@ def add(db, ts, type_, data, source="demo"):
 def seed(db):
     born = datetime.now(TZ).date() - timedelta(days=AGE_DAYS)
     baby.save_profile(db, {
-        "name": "Ava", "birth_date": born.isoformat(), "birth_time": "04:30",
+        "name": "Ava", "sex": "girl", "birth_date": born.isoformat(), "birth_time": "04:30",
         "birth_weight_g": 3350, "birth_length_cm": 50.5, "birth_head_cm": 34.5,
         "notes": "Demo data. Blood type O+. No known allergies. Born at the city hospital.",
     })

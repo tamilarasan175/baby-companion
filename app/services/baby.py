@@ -7,7 +7,8 @@ from ..models import BabyProfile, Event
 from .care_tools import to_number
 
 
-PROFILE_FIELDS = ("name", "birth_date", "birth_time", "birth_weight_g", "birth_length_cm", "birth_head_cm", "notes")
+PROFILE_FIELDS = ("name", "sex", "birth_date", "birth_time", "birth_weight_g", "birth_length_cm", "birth_head_cm", "notes")
+SEXES = ("girl", "boy")  # picks the WHO growth chart
 NUMERIC_FIELDS = ("birth_weight_g", "birth_length_cm", "birth_head_cm")
 
 
@@ -28,6 +29,10 @@ def save_profile(db: Session, data: dict) -> dict:
             clean[k] = v
     if "birth_date" in clean:
         date.fromisoformat(clean["birth_date"])  # raises ValueError if invalid
+    if "sex" in clean:
+        clean["sex"] = clean["sex"].lower()
+        if clean["sex"] not in SEXES:
+            raise ValueError("sex must be 'girl' or 'boy'")
     row = db.get(BabyProfile, 1)
     if row:
         row.data = clean
@@ -59,7 +64,8 @@ def profile_summary(db: Session, tz) -> str:
     p = get_profile(db)
     if not p:
         return "The parent has not filled in the baby profile yet (no name, birth date or birth weight)."
-    parts = [f"Baby's name: {p['name']}." if p.get("name") else ""]
+    parts = [f"Baby's name: {p['name']}." if p.get("name") else "",
+             f"A {p['sex']}." if p.get("sex") else ""]
     if p.get("birth_date"):
         parts.append(f"Born {p['birth_date']}" + (f" at {p['birth_time']}" if p.get("birth_time") else "") +
                      f", now {age_text(p['birth_date'], tz)}.")

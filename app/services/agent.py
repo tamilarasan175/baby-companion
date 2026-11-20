@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from ..models import Event
-from . import baby, llm, rag
+from . import baby, growth, llm, rag
 from ..config import EMERGENCY_NUMBER, HEALTH_LINE, HEALTH_LINE_NUMBER
 from .timeutil import get_tz, local_midnight_utc, to_local
 
@@ -40,6 +40,7 @@ How to work:
 - Questions about what the doctor, nurse or clinic said: call clinic_visits.
 - Use only what "About the baby" and tool results say about her age, birth weight and history. If something is not there, say you don't know. Never assume.
 - Questions about vaccines, shots or injections (e.g. RSV): call immunizations.
+- Questions about percentiles, growth charts or weight in percent of birth weight: call growth_percentiles. Report the percentiles exactly as given; never call a percentile good or bad, and mention that following the same line over time matters more than one number.
 - Only call tools through the tool interface. Never write a tool call as text.
 - To compare two periods (today vs yesterday, this week vs last week), use compare_periods. Mention both feed count and milk volume.
 - Every number you state must come from a tool result. Never estimate or invent numbers. Use calculate for any other arithmetic, with plain numbers only.
@@ -81,6 +82,12 @@ TOOLS = [
     {"type": "function", "function": {
         "name": "weight_history",
         "description": "All logged weights with dates; overall gain since the first weight; gain per day since the lowest weight (the usual measure after the newborn weight loss); and gain per day over about the last week.",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "growth_percentiles",
+        "description": "WHO growth chart percentiles for every recorded weight, length and head measurement (birth, home scale, clinic), "
+                       "plus weight change in percent vs birth weight (lowest point, latest, when birth weight was regained). "
+                       "Use for percentile, growth chart, 'how big is she compared to other babies' and percent-of-birth-weight questions.",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {
         "name": "search_documents",
@@ -336,6 +343,7 @@ TOOL_FUNCS = {
     "daily_breakdown": daily_breakdown,
     "recent_events": recent_events,
     "weight_history": weight_history,
+    "growth_percentiles": lambda db, tz: growth.growth_report(db, tz),
     "search_documents": search_documents,
     "clinic_visits": clinic_visits,
     "immunizations": immunizations,
@@ -375,6 +383,12 @@ def short_summary(name: str, result: dict) -> str:
             return w
         o = result.get("overall")
         return f"{len(w)} weights, latest {w[-1]['grams']} g on {w[-1]['date']}" + (f", avg +{o['avg_gain_per_day_g']} g/day" if o else "")
+    if name == "growth_percentiles":
+        w = result["weight"]
+        if isinstance(w, str):
+            return w
+        v = result.get("vs_birth_weight")
+        return f"weight {w[-1]['weight']} g on {w[-1]['date']}: {w[-1]['percentile']}" + (f"; latest {v['latest'].split(', ')[-1]}" if v else "")
     if name == "search_documents":
         p = result["passages"]
         return p if isinstance(p, str) else "; ".join(f"{x['title']} p.{x['page']}" for x in p)
@@ -442,8 +456,11 @@ VACCINE_Q = re.compile(r"vaccin|immuni[sz]|\bshots?\b|injection|\bjabs?\b|needle
 VISIT_Q = re.compile(r"\b(say|said|says|told|tell|mention\w*)\b.*\b(she|he|they|doctor|nurse|dr)\b|\b(she|he|they) (say|said|told|mention\w*)|doctor|\bnurse|clinic|visit|appointment|pediatrician|paediatrician|physician|\bgp\b|midwife|\bdr\b")
 # Numbers that appear naturally in answers ("past 24 hours", "call 811").
 ALWAYS_OK_NUMBERS = {"24", "48", "72", HEALTH_LINE_NUMBER, EMERGENCY_NUMBER}
+GROWTH_Q = re.compile(r"percentile|centile|growth chart|\bwho chart|(%|percent\w*).*birth|birth weight.*(%|percent)|"
+                      r"(compared|compare) (to|with) other bab|other babies")
+WEIGHT_TOOLS = {"weight_history", "growth_percentiles"}
 TOPICS = [
-    (re.compile(r"weigh|weight|gain|grow"), {"weight_history"}, "weight_history"),
+    (re.compile(r"weigh|weight|gain|grow"), WEIGHT_TOOLS, "weight_history"),
     (re.compile(r"diaper|\bwet\b|dirty|poo|pee"), LOG_TOOLS, "compare_periods, summarize_period or recent_events"),
     (re.compile(r"\b(eat|ate|eating|eats|feed|feeds|feeding|fed|milk|ml|drink|drank|bottle)\b"), LOG_TOOLS,
      "compare_periods or summarize_period"),
@@ -471,12 +488,18 @@ def required_sources(question: str) -> dict:
     logs = []
     if data or not advice:  # pure advice questions ("what should I do?") don't need the logs
         logs = [(needed, suggestion) for pattern, needed, suggestion in TOPICS if pattern.search(q)]
-        if logs and TOTAL_Q.search(q):  # "how much today?" needs a total, not just the last entry
+        weight = [x for x in logs if x[0] == WEIGHT_TOOLS]  # "how much weight did she gain?" is not a feed total
+        others = [x for x in logs if x[0] != WEIGHT_TOOLS]
+        if others and TOTAL_Q.search(q):  # "how much today?" needs a total, not just the last entry
             if re.search(r"\btoday\b|\byesterday\b|so far", q):
                 # Calendar days, matching the Today card (summarize_period counts the last 24 hours instead).
-                logs = [({"daily_breakdown"}, "daily_breakdown with days=2 (gives today so far and yesterday)")]
+                others = [({"daily_breakdown"}, "daily_breakdown with days=2 (gives today so far and yesterday)")]
             else:
-                logs = [(TOTAL_TOOLS, "summarize_period, compare_periods or daily_breakdown")]
+                others = [(TOTAL_TOOLS, "summarize_period, compare_periods or daily_breakdown")]
+        logs = weight + others
+    if GROWTH_Q.search(q):  # percentiles are always computed by the growth tool, whatever else the question asks
+        logs = [x for x in logs if x[0] != WEIGHT_TOOLS]
+        logs.insert(0, ({"growth_percentiles"}, "growth_percentiles"))
     vaccines = bool(VACCINE_Q.search(q))
     if vaccines and not data:  # "is the RSV shot safe?" is advice; "which shots has she had?" is a record lookup
         vaccines = not advice or bool(re.search(r"\b(has|had|got|get|given|did|when|which|next|due)\b", q))
@@ -545,7 +568,8 @@ async def run(db: Session, question: str, history: list = None, tz_name: str = N
     need = required_sources(question)
     plan = (["health documents"] if need["docs"] else []) + (["visit notes"] if need["visits"] else []) + \
            (["immunization record"] if need["vaccines"] else []) + \
-           (["baby's logs"] if need["logs"] else [])
+           (["WHO growth chart"] if any("growth_percentiles" == s for _, s in need["logs"]) else []) + \
+           (["baby's logs"] if any(s != "growth_percentiles" for _, s in need["logs"]) else [])
     if plan:
         yield {"type": "route", "text": "Needs: " + " + ".join(plan)}
         # Tell the model too, so it picks the right tools first time instead of being caught by the checker.

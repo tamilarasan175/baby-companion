@@ -630,8 +630,9 @@ def read_profile(tz: str = None, db: Session = Depends(get_db)):
 def update_profile(data: dict, tz: str = None, db: Session = Depends(get_db)):
     try:
         p = baby.save_profile(db, data)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Birth date must be a valid date.")
+    except ValueError as e:
+        detail = "Sex must be girl or boy." if "sex" in str(e) else "Birth date must be a valid date."
+        raise HTTPException(status_code=400, detail=detail)
     return {"profile": p, "age": baby.age_text(p.get("birth_date"), get_tz(tz)) if p.get("birth_date") else ""}
 
 

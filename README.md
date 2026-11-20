@@ -48,6 +48,7 @@ Most baby apps keep your child's data on their servers and put the "smart" featu
 **Baby profile and vaccines**
 - Birth date and time, birth weight, length, head size, and free-text notes (blood type, allergies, hospital…). The app shows the baby's age and the AI uses it.
 - **Vaccine record:** name, date, where it was given, notes, next dose due.
+- **Growth percentiles:** ask *"What percentile is her weight?"* and get WHO growth chart percentiles for every weight, length and head measurement (birth, home scale, clinic visits), plus weight change in % of birth weight. The WHO tables ship with the app (`app/services/who_growth.json`) and the maths is done in code, not by the AI. Set the baby's sex on the Baby tab first.
 
 **Next feed and iPhone alarm**
 - Shows when the next feed is due based on the last feed (every 2–4 h).
@@ -120,14 +121,14 @@ flowchart TD
 | Documents | PyMuPDF for PDF text extraction, BM25 ranking implemented in pure Python |
 | AI integration | [Model Context Protocol](https://modelcontextprotocol.io) server (`mcp` Python SDK) |
 | Packaging | Docker + Docker Compose |
-| Tests | pytest (33 tests: parsers, agent routing and checker, search, API, login) |
+| Tests | pytest (43 tests: parsers, agent routing and checker, search, API, login) |
 
 ## AI concepts used (and where to find them)
 
 | Concept | What it does here | Code |
 |---|---|---|
 | **AI agent / tool-use loop** | The model decides which tools to call, reads the results and repeats until it can answer (up to 8 steps) | `app/services/agent.py` → `run()` |
-| **Function / tool calling** | 9 read-only tools: totals for a period, period comparison, daily breakdown, recent events, weight history, document search, visit notes, immunizations, calculator | `agent.py` → `TOOLS` |
+| **Function / tool calling** | 10 read-only tools: totals for a period, period comparison, daily breakdown, recent events, weight history, WHO growth percentiles, document search, visit notes, immunizations, calculator | `agent.py` → `TOOLS` |
 | **Reflection / verifier step** | Before an answer is shown, code checks that the right sources were used and that every number appears in a tool result; failures go back to the model with the reason | `agent.py` → `check_answer()` |
 | **Deterministic routing and guardrails** | Code (not the model) classifies the question (advice / data / visit / vaccine) and shows a fixed safety notice for warning signs | `agent.py` → `required_sources()`, `RED_FLAGS` |
 | **RAG (retrieval-augmented generation)** | Health guides are chunked, ranked with BM25 and passed to the model with page numbers for cited answers | `app/services/rag.py`, `/rag/query` |
@@ -299,6 +300,7 @@ app/
   models.py             SQLAlchemy models (events, documents, chunks, baby profile)
   services/
     agent.py            Ask agent: tools, loop, routing, safety notice, answer checker
+    growth.py           WHO growth percentiles (who_growth.json: WHO Child Growth Standards 2006)
     voice_agent.py      Voice log: LLM tool calls + grounding + rule-based fallback
     rag.py              Document ingestion, chunking, BM25 search
     audio.py            ffmpeg decoding + faster-whisper transcription
